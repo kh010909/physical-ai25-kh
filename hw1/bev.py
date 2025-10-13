@@ -21,64 +21,58 @@ class Projection(object):
             Project the top view pixels to the front view pixels.
             :return: New pixels on perspective(front) view image
         """
-        # Camera Intrinsic Parameters based on spec (512x512, 90deg FOV) [cite: 37, 38]
-        img_width, img_height = 512, 512
-        cx, cy = img_width / 2, img_height / 2
-        fx = fy = cx / np.tan(np.deg2rad(fov / 2))
-        K = np.array([[fx, 0, cx],
-                      [0, fy, cy],
-                      [0, 0, 1]])
-        K_inv = np.linalg.inv(K)
+        # Camera Intrinsic Parameters
+        img_w, img_h = 512, 512
+        c_x, c_y = img_w / 2, img_h / 2
+        f_x = f_y = c_x / np.tan(np.deg2rad(fov / 2))
+        intrinsic_matrix = np.array([[f_x, 0, c_x],
+                                     [0, f_y, c_y],
+                                     [0, 0, 1]])
+        intrinsic_inv = np.linalg.inv(intrinsic_matrix)
 
-        # Camera Extrinsic Parameters from spec [cite: 27, 28]
-        # Front Camera (Cam1) Pose (Camera to World)
-        R_front = np.identity(3)
-        t_front = np.array([[0], [1], [0]])
+        # Front Camera (Cam1) Pose
+        rotation_front = np.eye(3)
+        translation_front = np.array([[0], [1], [0]])
 
-        # BEV Camera (Cam2) Pose (Camera to World)
-        bev_pitch_angle = -np.pi / 2
-        R_bev = np.array([[1, 0, 0],
-                          [0, np.cos(bev_pitch_angle), -np.sin(bev_pitch_angle)],
-                          [0, np.sin(bev_pitch_angle), np.cos(bev_pitch_angle)]])
-        t_bev = np.array([[0], [2.5], [0]])
+        # BEV Camera (Cam2) Pose
+        pitch_rad = -np.pi / 2
+        rotation_bev = np.array([[1, 0, 0],
+                                 [0, np.cos(pitch_rad), -np.sin(pitch_rad)],
+                                 [0, np.sin(pitch_rad), np.cos(pitch_rad)]])
+        translation_bev = np.array([[0], [2.5], [0]])
 
-        # Create World-to-Front-Camera Transformation Matrix
-        T_world_front = np.hstack((R_front, t_front))
-        T_world_front = np.vstack((T_world_front, [0, 0, 0, 1]))
-        T_front_world = np.linalg.inv(T_world_front)
+        # World-to-Front-Camera Transformation
+        transform_world_front = np.vstack((np.hstack((rotation_front, translation_front)), 
+                                          [0, 0, 0, 1]))
+        transform_front_world = np.linalg.inv(transform_world_front)
         
-        new_pixels = []
-        for p_bev in self.points:
-            # 1. Unproject the 2D BEV pixel to a 3D ray in the BEV camera's coordinate system.
-            p_bev_homogeneous = np.array([p_bev[0], p_bev[1], 1.0])
-            ray_cam_bev = K_inv @ p_bev_homogeneous
+        projected_pixels = []
+        for bev_pixel in points:
+            # Unproject BEV pixel to 3D ray
+            pixel_homog = np.array([bev_pixel[0], bev_pixel[1], 1.0])
+            camera_ray = intrinsic_inv @ pixel_homog
 
-            # 2. Transform the ray from BEV camera coordinates to world coordinates.
-            ray_world = R_bev @ ray_cam_bev
+            # Transform ray to world coordinates
+            world_ray = rotation_bev @ camera_ray
             
-            # 3. Calculate the intersection of the ray with the ground plane (Y=0) in world coordinates.
-            # The ray originates from the BEV camera's position (t_bev).
-            # Ray equation: P(t) = t_bev + t * ray_world
-            # At Y=0: t_bev[1] + t * ray_world[1] = 0
-            if ray_world[1] >= 0: continue # Ray is not pointing towards the ground plane
-            
-            t = -t_bev[1] / ray_world[1]
-            P_world = t_bev.flatten() + t * ray_world
-            P_world_homogeneous = np.append(P_world, 1)
+            # Intersect with ground plane (Y=0)
+            scale = -translation_bev[1] / world_ray[1]
+            world_point = translation_bev.flatten() + scale * world_ray
+            world_point_homog = np.append(world_point, 1)
 
-            # 4. Transform the 3D world point into the front camera's coordinate system.
-            P_cam_front_homogeneous = T_front_world @ P_world_homogeneous
+            # Transform to front camera coordinates
+            front_cam_point_homog = transform_front_world @ world_point_homog
             
-            # 5. Project the 3D point onto the front camera's 2D image plane.
-            # Perform perspective division
-            P_cam_front = P_cam_front_homogeneous[:3] / P_cam_front_homogeneous[2]
-            p_front_homogeneous = K @ P_cam_front
+            # Project onto front camera image plane
+            front_cam_point = front_cam_point_homog[:3] / front_cam_point_homog[2]
+            front_pixel_homog = intrinsic_matrix @ front_cam_point
             
-            u, v = int(p_front_homogeneous[0]), int(p_front_homogeneous[1])
+            u_coord, v_coord = int(front_pixel_homog[0]), int(front_pixel_homog[1])
 
-            if 0 <= u < img_width and 0 <= v < img_height:
-                new_pixels.append([u, v])
-        return new_pixels
+            if 0 <= u_coord < img_w and 0 <= v_coord < img_h:
+                projected_pixels.append([u_coord, v_coord])
+                
+        return projected_pixels
 
     def show_image(self, new_pixels, img_name='projection.png', color=(0, 0, 255), alpha=0.4):
         """
