@@ -7,6 +7,9 @@ import copy
 from tqdm import tqdm
 
 def depth_image_to_point_cloud(rgb, depth):
+    """
+    Converts an RGB and a depth image into a 3D point cloud.
+    """
     # Using Open3D's built-in RGBD to point cloud conversion
     h, w = depth.shape
     f = w / (2 * np.tan(np.radians(90) / 2))
@@ -38,9 +41,10 @@ def depth_image_to_point_cloud(rgb, depth):
     
     return pcd
 
-
 def preprocess_point_cloud(pcd, voxel_size):
-    # TODO: Do voxelization to reduce the number of points for less memory usage and speedup
+    """
+    Use voxelization to reduce the number of points.
+    """
     pcd_down = pcd.voxel_down_sample(voxel_size)
     return pcd_down
 
@@ -62,6 +66,9 @@ def compute_fpfh(pcd, voxel_size):
 
 def execute_global_registration(source_down, target_down, source_fpfh,
                                 target_fpfh, voxel_size):
+    """
+    Performs global registration on two downsampled point clouds using their FPFH features.
+    """
     # RANSAC distance threshold
     distance_threshold = voxel_size * 1.5
     
@@ -82,7 +89,9 @@ def execute_global_registration(source_down, target_down, source_fpfh,
 
 
 def local_icp_algorithm(source_down, target_down, trans_init, threshold):
-    # TODO: Use Open3D ICP function to implement
+    """
+    Use Open3D function to implement ICP.
+    """
     result = o3d.pipelines.registration.registration_icp(
         source_down, target_down, threshold, trans_init,
         o3d.pipelines.registration.TransformationEstimationPointToPoint()
@@ -91,7 +100,9 @@ def local_icp_algorithm(source_down, target_down, trans_init, threshold):
 
 
 def my_local_icp_algorithm(source_down, target_down, trans_init, voxel_size):
-    # TODO: Write your own ICP function
+    """
+    Use my own function to implement ICP.
+    """
     # ICP parameters
     max_iterations = 8
     threshold = voxel_size
@@ -157,15 +168,8 @@ def my_local_icp_algorithm(source_down, target_down, trans_init, voxel_size):
 
 
 def reconstruct(args):
-# TODO: Return results
     """
-    For example:
-        ...
-        args.version == 'open3d':
-            trans = local_icp_algorithm()
-        args.version == 'my_icp':
-            trans = my_local_icp_algorithm()
-        ...
+    The main reconstruct function.
     """
     data_dir = args.data_root
     
@@ -281,10 +285,7 @@ if __name__ == '__main__':
     elif args.floor == 2:
         args.data_root = "data_collection/second_floor/"
     
-    # TODO: Output result point cloud and estimated camera pose
-    '''
-    Hint: Follow the steps on the spec
-    '''
+
     result_pcd, pred_cam_pos = reconstruct(args)
     
     # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
@@ -293,10 +294,7 @@ if __name__ == '__main__':
     # Reflect positions across the XY plane to align with reconstruction (position only)
     gt_poses[:, 2] *= -1
 
-    # TODO: Calculate and print L2 distance
-    '''
-    Hint: Mean L2 distance = mean(norm(ground truth - estimated camera trajectory))
-    '''
+
     pred_positions = np.array([pose[:3, 3] for pose in pred_cam_pos])
     gt_positions = gt_poses[:, :3]
     assert len(pred_positions) == len(gt_positions)
@@ -316,6 +314,7 @@ if __name__ == '__main__':
     alignment_transform[:3, 3] = offset
     result_pcd.transform(alignment_transform)
 
+
     # Remove ceiling points before visualization
     starting_height = gt_positions[0, 1]
     result_pcd = remove_ceiling_points(
@@ -324,13 +323,6 @@ if __name__ == '__main__':
         offset=0.2
     )
 
-    # TODO: Visualize result
-    '''
-    Hint: Sould visualize
-    1. Reconstructed point cloud
-    2. Red line: estimated camera pose
-    3. Black line: ground truth camera pose
-    '''
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_len - 1)]
 
