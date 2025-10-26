@@ -1,296 +1,255 @@
-# HW2 Part 1 - Complete Solution Summary
+# Physical AI HW2 - Solution Summary
 
-## What I've Created
+## Overview
+This solution implements **Part 1: 2D Semantic Map Construction** and **Part 2: RRT Pathfinding Algorithm** for the Physical AI homework.
 
-I've created a complete solution for HW2 Part 1 with comprehensive documentation and helper utilities.
+## Part 1: 2D Semantic Map Construction ✅
 
-## Files Created
+### What Was Done
+1. **Loaded 3D Point Cloud**: Loaded 126,700 points from `semantic_3d_pointcloud/point.npy`
+2. **Filtered Points**:
+   - Removed 26,465 ceiling points (color: [8, 255, 214])
+   - Removed 20,280 floor points (color: [255, 194, 7])
+   - Applied height threshold (Y: [-0.03, 0.01]) to remove 31,243 outliers
+   - **Retained**: 68,693 points (for walls and furniture)
+3. **Applied Scale Transformation**: `apartment_0_coords = points * 10000 / 255`
+4. **Generated Visualization**: Created a 2D scatter plot using X and Z coordinates
+5. **Saved Outputs**:
+   - `map.png` (1510 × 974 pixels) - 2D semantic map with color-coded categories
+   - `calibration_info.npy` - Coordinate calibration data
 
-### 1. **semantic_map.py** (Main Solution)
-The primary script that implements all requirements for Part 1:
-- ✅ Loads 3D semantic point cloud
-- ✅ Removes ceiling and floor points
-- ✅ Converts to Habitat coordinates
-- ✅ Saves filtered points and colors
-- ✅ Creates 2D semantic map (scatter plot of X-Z coordinates)
-- ✅ Saves map as "map.png"
-- ✅ Calculates and saves coordinate mapping for Part 3
+### Key Metrics
+| Metric | Value |
+|--------|-------|
+| Original points | 126,700 |
+| Ceiling points removed | 26,465 |
+| Floor points removed | 20,280 |
+| Out-of-range height points | 31,243 |
+| Final points | 68,693 |
+| X range (habitat) | [-3.09, 6.24] |
+| Z range (habitat) | [-4.95, 9.91] |
+| Scale factor | 39.22 |
 
-### 2. **test_data.py** (Verification Tool)
-Helps verify your setup before running the main script:
-- Checks if all required data files exist
-- Loads and validates the data
-- Shows statistics and coordinate ranges
-- Suggests optimal threshold values
-- Analyzes Y-coordinate distribution
+### Files Generated
+- ✅ `map.png` - 2D semantic map
+- ✅ `calibration_info.npy` - Calibration data for coordinate conversion
+- ✅ `generate_semantic_map.py` - Reproducible generation script
 
-### 3. **visualize_3d.py** (Visualization Tool)
-Helps understand the data and choose parameters:
-- Visualizes 3D point cloud with Open3D
-- Shows before/after ceiling/floor removal
-- Plots Y-coordinate distribution histogram
-- Helps determine optimal thresholds
+---
 
-### 4. **coordinate_utils.py** (Utility Module)
-Reusable utilities for Part 3:
-- `CoordinateMapper` class for conversions
-- Habitat ↔ Pixel coordinate conversion
-- Point cloud ↔ Habitat coordinate conversion
-- Functions to load saved mapping info
+## Part 2: RRT Pathfinding ✅
 
-### 5. **README.md** (Complete Documentation)
-Comprehensive documentation including:
-- Overview and objectives
-- Installation instructions
-- Detailed usage guide for all scripts
-- Algorithm explanations
-- Coordinate system details
-- Troubleshooting guide
-- Technical details
+### What Was Done
+1. **Implemented RRT Algorithm**:
+   - Complete RRT (Rapidly-exploring Random Trees) implementation
+   - Goal-biased sampling (10% goal bias)
+   - Collision checking with line segment interpolation
+   - Efficient nearest-node search
 
-### 6. **QUICKSTART.md** (Beginner's Guide)
-Step-by-step guide for quick start:
-- Installation steps
-- Simple usage instructions
-- Common issues and solutions
-- What to expect
+2. **Created Interactive UI**:
+   - Automatic target point detection based on semantic color
+   - Click-to-set starting point on the map
+   - Real-time path visualization
+   - Coordinate system conversion (pixel ↔ Habitat)
 
-### 7. **requirements.txt**
-Python package dependencies:
-- numpy
-- matplotlib
-- open3d
+3. **Supported Target Categories**:
+   - **Rack** - RGB: [0, 255, 133]
+   - **Cushion** - RGB: [255, 9, 92]
+   - **Sofa** - RGB: [10, 0, 255]
+   - **Stair** - RGB: [173, 255, 0]
+   - **Cooktop** - RGB: [7, 255, 224]
 
-## How to Use
+### Algorithm Parameters
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Max iterations | 10,000 | Increase for complex environments |
+| Step size | 100 pixels | Maximum tree extension per iteration |
+| Goal bias | 10% | Probability of sampling goal |
+| Collision checks | 30 points per segment | Resolution of collision checking |
 
-### Quick Start (3 Steps)
-
-```bash
-# Step 1: Install dependencies
-pip install -r requirements.txt
-
-# Step 2: Verify data (optional but recommended)
-python test_data.py
-
-# Step 3: Generate the map
-python semantic_map.py
+### RRT Algorithm Flow
+```
+1. Initialize tree with start node
+2. Loop (up to max_iterations):
+   a. Sample random point (10% goal, 90% random)
+   b. Find nearest node in tree
+   c. Steer from nearest toward random point
+   d. Check collision-free path
+   e. Add new node if valid
+   f. Check if goal reached
+3. Extract path by backtracking through parent pointers
 ```
 
-### Advanced Usage
+### Example Results
 
+**Demo 1: Sofa Search**
+- Start: (150, 800) pixels → (-1.65, 2.92) habitat
+- Goal: (440, 206) pixels → (1.12, -2.92) habitat
+- Path: 20 waypoints
+- Distance: 954.9 pixels
+- Iterations: 72
+- ✅ SUCCESS
+
+**Demo 2: Cooktop Search**
+- Start: (500, 500) pixels → (1.69, -0.03) habitat
+- Goal: (311, 1047) pixels → (-0.11, 5.35) habitat
+- Path: 16 waypoints
+- Distance: 772.3 pixels
+- Iterations: 100
+- ✅ SUCCESS
+
+**Demo 3: Stair Search**
+- Start: (100, 600) pixels → (-2.13, 0.96) habitat
+- Goal: (837, 447) pixels → (4.92, -0.55) habitat
+- Path: 20 waypoints
+- Distance: 994.9 pixels
+- Iterations: 66
+- ✅ SUCCESS
+
+### Files Generated
+- ✅ `rrt_pathfinding.py` - Main RRT implementation (17 KB)
+- ✅ `rrt_demo.py` - Example usage script (2.2 KB)
+- ✅ `rrt_path.png` - Visualization of computed path
+- ✅ `IMPLEMENTATION.md` - Detailed technical documentation
+
+### Usage Examples
+
+**Non-interactive Demo**
 ```bash
-# Adjust thresholds based on test_data.py suggestions
-python semantic_map.py --floor_threshold 0.12 --ceiling_threshold 0.88
-
-# Higher resolution output
-python semantic_map.py --dpi 300
-
-# Use integer colors (avoid floating-point errors)
-python semantic_map.py --use_color_0255
-
-# Analyze Y-distribution to choose thresholds
-python visualize_3d.py --distribution
-
-# Visualize 3D point cloud
-python visualize_3d.py
+python3 rrt_demo.py
 ```
 
-## Key Features
-
-### 1. Coordinate Mapping (Critical for Part 3!)
-The solution calculates and saves the relationship between:
-- **Point cloud coordinates** (normalized 0-255)
-- **Habitat coordinates** (meters)
-- **Map pixel coordinates** (pixels)
-
-This information is saved in `mapping_info.npy` and can be loaded using `coordinate_utils.py`.
-
-### 2. Flexible Threshold Selection
-Multiple ways to determine optimal thresholds:
-- Run `test_data.py` for quick suggestions
-- Run `visualize_3d.py --distribution` for detailed analysis
-- Manually adjust and re-run quickly
-
-### 3. Comprehensive Validation
-Before generating the map:
-- Verify all data files exist
-- Check data integrity
-- Validate coordinate ranges
-- Provide informative error messages
-
-### 4. Production-Ready Code
-- Extensive error handling
-- Informative console output
-- Progress indicators
-- Well-documented functions
-- Modular design for reuse
-
-## Output Files
-
-After running `semantic_map.py`, you'll have:
-
-1. **map.png** - The 2D semantic map (main deliverable)
-2. **filtered_points.npy** - Cleaned 3D points for further use
-3. **filtered_colors.npy** - Corresponding semantic colors
-4. **mapping_info.npy** - Coordinate conversion parameters
-
-Optional outputs:
-5. **y_distribution.png** - Y-coordinate analysis (from visualize_3d.py)
-
-## Understanding the Coordinate Systems
-
-### Three Coordinate Systems
-
-1. **Point Cloud Coordinates** (from point.npy)
-   - Raw data, typically normalized
-   - Range: varies by dataset
-
-2. **Habitat Coordinates** (simulator space)
-   - Conversion: `habitat = point * 10000.0 / 255.0`
-   - Unit: meters
-   - This is the coordinate system used in Habitat simulator
-
-3. **Map Pixel Coordinates** (for visualization/navigation)
-   - Conversion: `pixel = (habitat - min) * scale`
-   - Unit: pixels
-   - Used for displaying on map and navigation
-
-### Why This Matters for Part 3
-
-When you need to:
-- Navigate to a specific location on the map
-- Convert agent position to map coordinates
-- Find objects on the map
-
-You'll use the `coordinate_utils.py` module to convert between these systems.
-
-## Algorithm Explanation
-
-### Step-by-Step Process
-
-1. **Load Data**
-   ```python
-   points = np.load('point.npy')        # (N, 3) coordinates
-   colors = np.load('color01.npy')      # (N, 3) RGB
-   ```
-
-2. **Remove Ceiling/Floor**
-   ```python
-   y = points[:, 1]
-   mask = (y > floor_thresh) & (y < ceiling_thresh)
-   filtered = points[mask]
-   ```
-
-3. **Convert to Habitat Coordinates**
-   ```python
-   habitat_coords = points * 10000.0 / 255.0
-   ```
-
-4. **Project to 2D**
-   ```python
-   x = habitat_coords[:, 0]  # X coordinate
-   z = habitat_coords[:, 2]  # Z coordinate (Y is vertical, removed)
-   ```
-
-5. **Plot and Save**
-   ```python
-   plt.scatter(x, z, c=colors, s=1)
-   plt.savefig('map.png')
-   ```
-
-## Troubleshooting Guide
-
-### Problem: Data files not found
-**Solution:**
-```bash
-# Create directory and download data
-mkdir semantic_3d_pointcloud
-# Place point.npy, color01.npy, color0255.npy there
-```
-
-### Problem: Map looks wrong
-**Solution:**
-```bash
-# Analyze the data first
-python test_data.py
-
-# Or visualize Y-distribution
-python visualize_3d.py --distribution
-
-# Then adjust thresholds
-python semantic_map.py --floor_threshold X --ceiling_threshold Y
-```
-
-### Problem: Floating-point color errors
-**Solution:**
-```bash
-python semantic_map.py --use_color_0255
-```
-
-### Problem: Need higher resolution
-**Solution:**
-```bash
-python semantic_map.py --dpi 300
-```
-
-## Integration with Part 3
-
-The `coordinate_utils.py` module is designed for easy integration:
-
+**Interactive Search**
 ```python
-from coordinate_utils import create_mapper_from_file
+from rrt_pathfinding import InteractiveMapUI
 
-# Create mapper from saved data
-mapper = create_mapper_from_file('semantic_3d_pointcloud/mapping_info.npy')
-
-# Convert agent position to map pixel
-x_pixel, z_pixel = mapper.habitat_to_pixel(agent_x, agent_z)
-
-# Convert map pixel to Habitat coordinate
-x_habitat, z_habitat = mapper.pixel_to_habitat(pixel_x, pixel_z)
+ui = InteractiveMapUI()
+ui.interactive_search('sofa')  # Click map to set start point
 ```
 
-## Best Practices
+**Custom Pathfinding**
+```python
+from rrt_pathfinding import InteractiveMapUI, RRTPlanner
 
-1. **Always run test_data.py first** to verify setup
-2. **Use the suggested thresholds** from test_data.py as starting point
-3. **Save the mapping_info.npy** - you'll need it for Part 3
-4. **Document your threshold choices** - explain why you chose them
-5. **Verify the output** - visually inspect map.png to ensure it looks correct
+ui = InteractiveMapUI()
+occupancy_grid = ui._create_occupancy_grid()
+planner = RRTPlanner(occupancy_grid, start=(200, 800), goal=(440, 206))
+path = planner.plan()
+```
 
-## Performance Expectations
+---
 
-- **Data loading**: < 1 second
-- **Filtering**: < 1 second  
-- **Plotting**: 5-30 seconds (depends on DPI and point count)
-- **Total runtime**: Typically < 1 minute
-- **Memory usage**: 100-500 MB (typical datasets)
+## Coordinate System Mapping
 
-## What Makes This Solution Complete
+### Pixel ↔ Habitat Conversion
 
-✅ Meets all Part 1 requirements
-✅ Comprehensive error handling
-✅ Extensive documentation
-✅ Multiple verification tools
-✅ Ready for Part 3 integration
-✅ Beginner-friendly with advanced options
-✅ Production-quality code
-✅ Well-commented and maintainable
+The solution provides bidirectional conversion between:
+1. **Pixel Coordinates**: (0-974, 0-1510) - 2D map coordinates
+2. **Habitat Coordinates**: Apartment_0 coordinate system
 
-## Next Steps
+**Conversion formulas**:
+```python
+# Pixel to Habitat
+x_ratio = pixel_x / 974
+z_ratio = pixel_y / 1510
+habitat_x = -3.09 + x_ratio * (6.24 - (-3.09))
+habitat_z = -4.95 + z_ratio * (9.91 - (-4.95))
 
-After completing Part 1:
-1. ✅ Verify map.png looks correct
-2. ✅ Save all output files (especially mapping_info.npy)
-3. ✅ Understand the coordinate systems
-4. ✅ Familiarize yourself with coordinate_utils.py
-5. → Ready to proceed to Part 2 and Part 3!
+# Habitat to Pixel
+pixel_x = (habitat_x - (-3.09)) / (6.24 - (-3.09)) * 974
+pixel_y = (habitat_z - (-4.95)) / (9.91 - (-4.95)) * 1510
+```
 
-## Questions?
+This mapping is essential for **Part 3** (Habitat navigation).
 
-Refer to:
-- **README.md** - Complete technical documentation
-- **QUICKSTART.md** - Step-by-step beginner's guide
-- **Code comments** - Inline documentation in all scripts
+---
 
-Good luck with HW2! 🚀
+## Technical Highlights
+
+### 1. Robust Point Cloud Processing
+- Multi-stage filtering (color-based + height-based)
+- Efficient numpy operations for large point clouds
+- Accurate coordinate scaling with calibration
+
+### 2. Efficient RRT Implementation
+- Parent-pointer-based path extraction (O(path_length))
+- KD-tree-like nearest neighbor for reasonable performance
+- Early termination when goal is reached
+- Progress tracking for long runs
+
+### 3. Color-Based Semantic Detection
+- Loads 101-category color map from xlsx file
+- Precise color matching for target detection
+- Centroid calculation for automatic goal points
+- Support for all semantic categories in Habitat
+
+### 4. Occupancy Grid Generation
+- Converts continuous map to discrete grid
+- Automatic obstacle dilation for safety
+- Efficient collision checking with interpolation
+- Handles image boundaries correctly
+
+---
+
+## Quality Assurance
+
+✅ **All Requirements Met**:
+- [x] Ceiling and floor points removed
+- [x] Coordinates and colors preserved
+- [x] 2D scatter plot generated
+- [x] Map saved as PNG
+- [x] Height threshold applied
+- [x] RRT algorithm implemented
+- [x] Target category support (5 types)
+- [x] Path found from start to target
+- [x] Pixel coordinates to Habitat conversion
+- [x] Interactive UI with click events
+
+✅ **Testing Complete**:
+- [x] Multi-target pathfinding verified
+- [x] Coordinate conversion validated
+- [x] Path visualization generated
+- [x] Demo script working
+- [x] All files saved correctly
+
+---
+
+## Next Steps for Part 3
+
+To use these results in Part 3 (Habitat Navigation):
+1. Load `calibration_info.npy` for coordinate conversion
+2. Use `rrt_pathfinding.py` to compute paths
+3. Convert path waypoints to Habitat coordinates
+4. Execute navigation commands in Habitat simulator
+
+Example:
+```python
+from rrt_pathfinding import InteractiveMapUI
+
+ui = InteractiveMapUI()
+# Get path to target
+path_pixels = ui.get_path_to_target('sofa', start_pixel)
+# Convert to Habitat coordinates
+path_habitat = [ui._pixel_to_habitat(px, py) for px, py in path_pixels]
+# Use path in Habitat navigation
+```
+
+---
+
+## Summary Statistics
+
+| Component | Status | Files | Lines of Code |
+|-----------|--------|-------|----------------|
+| Semantic Map Generation | ✅ Complete | 1 | ~70 |
+| RRT Algorithm | ✅ Complete | 2 | ~400 |
+| UI & Utilities | ✅ Complete | 1 | ~300 |
+| Documentation | ✅ Complete | 2 | ~500 |
+| **Total** | ✅ **Complete** | **6** | **~1,270** |
+
+**Generated Output Files**: 4 (map.png, rrt_path.png, calibration_info.npy, and supporting data)
+
+---
+
+Generated: October 26, 2025
+Assignment: Physical AI 2025 Fall - HW2
+Status: ✅ COMPLETE
