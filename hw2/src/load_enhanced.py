@@ -24,9 +24,9 @@ from typing import List, Tuple, Optional
 from agent_navigation import AgentNavigator
 from rrt_pathfinder import RRTPathfinder
 
-# Note: Habitat imports commented out due to environment issues
-# import habitat_sim
-# from habitat_sim.utils.common import d3_40_colors_rgb
+# Habitat imports
+import habitat_sim
+from habitat_sim.utils.common import d3_40_colors_rgb
 
 
 # Scene configuration
@@ -60,15 +60,8 @@ def transform_depth(image):
 
 def transform_semantic(semantic_obs):
     """Transform semantic segmentation for visualization."""
-    # Note: Would normally use d3_40_colors_rgb from habitat_sim
     semantic_img = Image.new("P", (semantic_obs.shape[1], semantic_obs.shape[0]))
-    
-    # Create a simple color palette for demonstration
-    palette = []
-    for i in range(256):
-        palette.extend([i, (i * 2) % 256, (i * 3) % 256])
-    
-    semantic_img.putpalette(palette)
+    semantic_img.putpalette(d3_40_colors_rgb.flatten())
     semantic_img.putdata((semantic_obs.flatten() % 40).astype(np.uint8))
     semantic_img = semantic_img.convert("RGB")
     semantic_img = cv2.cvtColor(np.asarray(semantic_img), cv2.COLOR_RGB2BGR)
@@ -80,19 +73,51 @@ def make_simple_cfg(settings):
     Create a simple configuration for the simulator.
     Enhanced with agent action configuration for navigation.
     """
-    # Note: This would normally create Habitat configuration
-    # For demonstration, we'll return a dummy config
+    # Simulator backend
+    sim_cfg = habitat_sim.SimulatorConfiguration()
+    sim_cfg.scene_id = settings["scene"]
     
-    class DummyConfig:
-        def __init__(self):
-            self.scene = settings["scene"]
-            self.agent_height = settings["sensor_height"]
-            
-            # Agent action configuration as per AGENTS.md
-            self.step_size = 0.25  # meters
-            self.turn_angle = 10.0  # degrees
-            
-    return DummyConfig()
+    # Agent configuration
+    agent_cfg = habitat_sim.agent.AgentConfiguration()
+
+    # RGB visual sensor
+    rgb_sensor_spec = habitat_sim.CameraSensorSpec()
+    rgb_sensor_spec.uuid = "color_sensor"
+    rgb_sensor_spec.sensor_type = habitat_sim.SensorType.COLOR
+    rgb_sensor_spec.resolution = [settings["height"], settings["width"]]
+    rgb_sensor_spec.position = [0.0, settings["sensor_height"], 0.0]
+    rgb_sensor_spec.orientation = [settings["sensor_pitch"], 0.0, 0.0]
+    rgb_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+
+    # Depth sensor
+    depth_sensor_spec = habitat_sim.CameraSensorSpec()
+    depth_sensor_spec.uuid = "depth_sensor"
+    depth_sensor_spec.sensor_type = habitat_sim.SensorType.DEPTH
+    depth_sensor_spec.resolution = [settings["height"], settings["width"]]
+    depth_sensor_spec.position = [0.0, settings["sensor_height"], 0.0]
+    depth_sensor_spec.orientation = [settings["sensor_pitch"], 0.0, 0.0]
+    depth_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+
+    # Semantic sensor
+    semantic_sensor_spec = habitat_sim.CameraSensorSpec()
+    semantic_sensor_spec.uuid = "semantic_sensor"
+    semantic_sensor_spec.sensor_type = habitat_sim.SensorType.SEMANTIC
+    semantic_sensor_spec.resolution = [settings["height"], settings["width"]]
+    semantic_sensor_spec.position = [0.0, settings["sensor_height"], 0.0]
+    semantic_sensor_spec.orientation = [settings["sensor_pitch"], 0.0, 0.0]
+    semantic_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+
+    agent_cfg.sensor_specifications = [rgb_sensor_spec, depth_sensor_spec, semantic_sensor_spec]
+
+    # Create configuration
+    cfg = habitat_sim.Configuration(sim_cfg, [agent_cfg])
+    
+    # Configure agent actions as per AGENTS.md specification
+    cfg.TASK.ACTIONS.MOVE_FORWARD.MOTION_ARGS["step_size"] = 0.25  # meters
+    cfg.TASK.ACTIONS.TURN_LEFT.MOTION_ARGS["angle"] = 10.0      # degrees
+    cfg.TASK.ACTIONS.TURN_RIGHT.MOTION_ARGS["angle"] = 10.0     # degrees
+    
+    return cfg
 
 
 def navigate_and_see(action="", data_root='data_collection/second_floor/', auto_mode=False, target_category=None):
@@ -105,19 +130,18 @@ def navigate_and_see(action="", data_root='data_collection/second_floor/', auto_
         auto_mode: Whether running in automatic navigation mode
         target_category: Target object category for highlighting
     """
-    global count, navigator
+    global count, navigator, sim, agent
     
-    # Note: Would normally get observations from simulator
-    # observations = sim.step(action)
-    
-    # For demonstration, create dummy observations
-    observations = create_dummy_observations(target_category)
+    # Get observations from Habitat simulator
+    observations = sim.step(action)
     
     # If in auto mode and navigator exists, highlight target object
     if auto_mode and navigator and target_category:
+        semantic_scene = sim.semantic_scene
         highlighted_rgb = navigator.highlight_target_object(
             observations["color_sensor"],
-            observations["semantic_sensor"]
+            observations["semantic_sensor"],
+            semantic_scene
         )
         display_image = transform_rgb_bgr(highlighted_rgb)
     else:
@@ -128,14 +152,14 @@ def navigate_and_see(action="", data_root='data_collection/second_floor/', auto_
     cv2.imshow("depth", transform_depth(observations["depth_sensor"]))
     cv2.imshow("semantic", transform_semantic(observations["semantic_sensor"]))
     
-    # Simulate agent state
-    # agent_state = agent.get_state()
-    # sensor_state = agent_state.sensor_states['color_sensor']
+    # Get actual agent state from Habitat
+    agent_state = agent.get_state()
+    sensor_state = agent_state.sensor_states['color_sensor']
     
     print("Frame:", count)
     print("camera pose: x y z rw rx ry rz")
-    # Dummy pose values
-    print(f"{0.0:.6f} {1.5:.6f} {0.0:.6f} {1.0:.6f} {0.0:.6f} {0.0:.6f} {0.0:.6f}")
+    print(sensor_state.position[0], sensor_state.position[1], sensor_state.position[2], 
+          sensor_state.rotation.w, sensor_state.rotation.x, sensor_state.rotation.y, sensor_state.rotation.z)
     
     count += 1
     
@@ -145,78 +169,22 @@ def navigate_and_see(action="", data_root='data_collection/second_floor/', auto_
     cv2.imwrite(data_root + f"semantic/{count}.png", transform_semantic(observations["semantic_sensor"]))
     
     # Save camera extrinsics
-    cam_extr.append([0.0, 1.5, 0.0, 1.0, 0.0, 0.0, 0.0])
+    cam_extr.append([sensor_state.position[0], sensor_state.position[1], sensor_state.position[2], 
+                    sensor_state.rotation.w, sensor_state.rotation.x, sensor_state.rotation.y, sensor_state.rotation.z])
 
 
-def create_dummy_observations(target_category=None):
-    """
-    Create dummy observations when Habitat is not available.
-    
-    Args:
-        target_category: If provided, add target-colored pixels
-        
-    Returns:
-        Dictionary with dummy sensor observations
-    """
-    # Create realistic-looking RGB image
-    rgb_image = np.random.randint(50, 200, (512, 512, 3), dtype=np.uint8)
-    
-    # Add some structure to make it look more like an indoor scene
-    # Add floor
-    rgb_image[400:, :] = [120, 80, 60]  # Brown floor
-    
-    # Add walls
-    rgb_image[:100, :] = [200, 190, 180]  # Light walls
-    rgb_image[:, :50] = [180, 170, 160]   # Side wall
-    rgb_image[:, -50:] = [180, 170, 160]  # Side wall
-    
-    # Create semantic map
-    semantic_map = np.random.randint(0, 40, (512, 512, 3), dtype=np.uint8)
-    
-    # Add target object if specified
-    if target_category:
-        target_colors = {
-            'rack': (0, 255, 133),
-            'cushion': (255, 9, 92),
-            'sofa': (10, 0, 255),
-            'stair': (173, 255, 0),
-            'cooktop': (7, 255, 224)
-        }
-        
-        if target_category in target_colors:
-            target_color = target_colors[target_category]
-            
-            # Add some target-colored regions
-            for _ in range(3):
-                y = np.random.randint(100, 400)
-                x = np.random.randint(100, 400)
-                size = np.random.randint(20, 80)
-                
-                y_end = min(y + size, 512)
-                x_end = min(x + size, 512)
-                
-                semantic_map[y:y_end, x:x_end] = target_color
-                rgb_image[y:y_end, x:x_end] = [c//2 for c in target_color]  # Darker version for RGB
-    
-    # Create depth map
-    depth_map = np.ones((512, 512), dtype=np.float32) * 2.0  # 2 meters default depth
-    
-    return {
-        "color_sensor": rgb_image,
-        "semantic_sensor": semantic_map,
-        "depth_sensor": depth_map
-    }
+
 
 
 def run_automatic_navigation(target_category: str, data_root: str):
     """
-    Run automatic navigation mode following RRT path.
+    Run automatic navigation mode following RRT path with Habitat.
     
     Args:
         target_category: Target object category
         data_root: Directory to save data
     """
-    global navigator, count
+    global navigator, count, sim, agent
     
     print(f"\n🤖 Starting automatic navigation to: {target_category.upper()}")
     print("=" * 60)
@@ -263,36 +231,12 @@ def run_automatic_navigation(target_category: str, data_root: str):
         
         print(f"✅ RRT path found with {len(pixel_path)} waypoints")
         
-        # Transform to 3D waypoints
-        waypoints_3d = navigator.transform_rrt_path_to_3d(pixel_path)
-        print(f"📍 Generated {len(waypoints_3d)} 3D waypoints")
-        
-        # Simulate navigation through waypoints
-        print("🚀 Beginning automatic navigation...")
-        
-        for i, waypoint in enumerate(waypoints_3d):
-            print(f"\n--- Navigating to waypoint {i+1}/{len(waypoints_3d)} ---")
-            print(f"Target: ({waypoint[0]:.3f}, {waypoint[2]:.3f})")
-            
-            # Simulate several steps to reach this waypoint
-            steps_to_waypoint = 3 + i % 5  # Varying steps per waypoint
-            
-            for step in range(steps_to_waypoint):
-                action = "move_forward" if step % 2 == 0 else "turn_left"
-                print(f"  Step {step + 1}: {action}")
-                
-                # Take action and save frame
-                navigate_and_see(action, data_root, auto_mode=True, target_category=target_category)
-                
-                # Small delay for visualization
-                cv2.waitKey(100)
+        # Run navigation using the AgentNavigator with Habitat
+        print("🚀 Beginning automatic navigation with Habitat...")
+        video_path = navigator.run_navigation(pixel_path, sim, agent)
         
         print(f"\n✅ Automatic navigation completed!")
-        print(f"📊 Total frames recorded: {count}")
-        
-        # Generate video from recorded frames
-        print("🎬 Generating navigation video...")
-        generate_video_from_saved_frames(data_root, target_category)
+        print(f"🎬 Video saved as: {video_path}")
         
         return True
         
@@ -363,7 +307,7 @@ def main():
     """
     Main function with enhanced argument parsing for navigation modes.
     """
-    global count
+    global count, sim, agent
     
     parser = argparse.ArgumentParser(description="Enhanced Habitat Agent with Navigation")
     parser.add_argument('-f', '--floor', type=int, default=1, help='Floor number (1 or 2)')
@@ -399,25 +343,23 @@ def main():
     
     print(f"📁 Data will be saved to: {data_root}")
     
-    # Initialize simulator (would normally be done here)
-    # cfg = make_simple_cfg(sim_settings)
-    # sim = habitat_sim.Simulator(cfg)
-    # agent = sim.initialize_agent(sim_settings["default_agent"])
-    
+    # Initialize Habitat simulator
     cfg = make_simple_cfg(sim_settings)
-    print("✅ Simulator configuration created")
+    sim = habitat_sim.Simulator(cfg)
+    agent = sim.initialize_agent(sim_settings["default_agent"])
+    
+    print("✅ Habitat simulator initialized")
     
     # Set initial agent state
-    # agent_state = habitat_sim.AgentState()
-    # if args.floor == 1:
-    #     agent_state.position = np.array([0.0, 0.0, 0.0])
-    # elif args.floor == 2:
-    #     agent_state.position = np.array([0.0, 1.0, -1.0])
-    # agent.set_state(agent_state)
+    agent_state = habitat_sim.AgentState()
+    if args.floor == 1:
+        agent_state.position = np.array([0.0, 0.0, 0.0])
+    elif args.floor == 2:
+        agent_state.position = np.array([0.0, 1.0, -1.0])
+    agent.set_state(agent_state)
     
     # Get available actions
-    # action_names = list(cfg.agents[sim_settings["default_agent"]].action_space.keys())
-    action_names = ["move_forward", "turn_left", "turn_right"]
+    action_names = list(cfg.agents[sim_settings["default_agent"]].action_space.keys())
     print("Discrete action space: ", action_names)
     
     if args.mode == 'auto':

@@ -128,15 +128,25 @@ cd src/
 python load_enhanced.py --mode auto --target sofa --floor 1
 ```
 
-### Option 3: Direct Integration
+### Complete Habitat Integration
 ```python
+# Full Habitat integration example
+import habitat_sim
 from agent_navigation import AgentNavigator
 from rrt_pathfinder import RRTPathfinder
 
+# Initialize Habitat
+cfg = make_navigation_cfg(scene_path)
+sim = habitat_sim.Simulator(cfg)
+agent = sim.initialize_agent(0)
+
+# Setup navigation
 pathfinder = RRTPathfinder('map.png', 'colors.xlsx', 'coords.txt')
 navigator = AgentNavigator(pathfinder, 'sofa')
 path = pathfinder.run_rrt(start_point, goal_point)
-video_path = navigator.run_navigation(path)
+
+# Execute navigation with Habitat
+video_path = navigator.run_navigation(path, sim, agent)
 ```
 
 ## 🎯 Target Categories Supported
@@ -149,24 +159,29 @@ video_path = navigator.run_navigation(path)
 | `stair` | (173, 255, 0) | Staircases |
 | `cooktop` | (7, 255, 224) | Kitchen surfaces |
 
-## 🔗 Integration with Habitat
+## 🔗 Full Habitat Integration
 
-The implementation is **Habitat-ready**:
+The implementation is **fully integrated with Habitat**:
 
-1. **Uncomment Habitat imports** in navigation files
-2. **Replace simulation methods** with actual Habitat API calls  
-3. **Update observation handling** to use real sensor data
-4. **No logic changes required** - core algorithms work with real data
+1. **✅ Habitat imports enabled** - All simulator functionality active
+2. **✅ Real sensor data** - RGB, depth, and semantic observations
+3. **✅ Actual agent control** - True movement and rotation actions  
+4. **✅ Semantic scene access** - Proper target object identification
 
-### Ready for Integration
+### Habitat Integration Features
 ```python
-# Just uncomment these lines when Habitat is available:
-# import habitat_sim
-# from habitat_sim.utils.common import d3_40_colors_rgb
+# Habitat simulator initialization
+sim = habitat_sim.Simulator(cfg)
+agent = sim.initialize_agent(0)
 
-# Replace simulation with real calls:
-# observations = sim.step(action)  # Instead of create_dummy_observations()
-# agent_state = agent.get_state()  # Instead of simulated state
+# Real observations from Habitat
+observations = sim.step(action)
+semantic_scene = sim.semantic_scene
+
+# Actual agent state tracking
+agent_state = agent.get_state()
+position = agent_state.position
+rotation = agent_state.rotation
 ```
 
 ## 📊 Performance Characteristics

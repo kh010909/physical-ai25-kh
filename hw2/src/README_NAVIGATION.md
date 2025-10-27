@@ -18,17 +18,17 @@ This directory contains the implementation of the agent navigation system descri
 
 ## 🚀 Quick Start
 
-Since there are environment issues with Habitat, you can run the demo without Habitat:
+With Habitat fully integrated, run the complete navigation system:
 
 ```bash
-# Run basic navigation demo
-python demo_agent_navigation.py --target sofa
+# Complete navigation with Habitat
+python habitat_navigation_example.py --target sofa --scene replica_v1/apartment_0/habitat/mesh_semantic.ply
 
-# Run with different target and more frames
+# Enhanced load script with automatic navigation
+python load_enhanced.py --mode auto --target sofa --floor 1
+
+# Demo without Habitat (for testing)
 python demo_agent_navigation.py --target rack --frames 100
-
-# Show only coordinate transformation
-python demo_agent_navigation.py --coords-only
 ```
 
 ## 🎯 Implementation Features
