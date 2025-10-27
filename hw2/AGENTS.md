@@ -1,45 +1,126 @@
-# TASK
+It looks like you've pasted an incomplete version of the file, which confirms it's getting cut off for you.
 
-Construct a 2D semantic map by projecting a 3D semantic point cloud onto a top-down (X-Z plane) view.
+My apologies again. Let's provide the **full and complete content** one more time. Please copy the *entire* text block below, from the very beginning (` ```markdown `) to the very end (` ``` `), and paste that into your `.md` file.
 
----
+-----
 
-# REQUIREMENTS
+````markdown
+# Code Agent Task: RRT Path Navigation and Visualization in Habitat
 
--   **Files:**
-    -   3D semantic map for `apartment_0`
-    -   `color_01.npy` (Color map with RGB values in [0, 1])
-    -   `color_0255.npy` (Color map with RGB values in [0, 255])
-    -   `color_coding_semantic_segmentation_classes.xlsx`: The colors and their corresponding semantic labels (Use for remove items).
--   **Libraries:**
-    -   A library to read and process point clouds (e.g., `open3d`, `plyfile`).
-    -   `numpy` for numerical operations.
-    -   `matplotlib` (or a similar plotting library) to generate the 2D map.
+## 🎯 Objective
+
+The goal is to implement a navigation agent in the Habitat simulator. The agent will follow a pre-computed path from an RRT algorithm, visually highlight the target object during navigation, and record its journey as a video file.
 
 ---
 
-# STEPS
+## ⚙️ Prerequisites
 
-1.  **Load Data:**
-    -   Load the 3D semantic map file (e.g., a `.ply` file) for `apartment_0`.
-    -   Load the color map files (`color_01.npy` or `color_0255.npy`).
-2.  **Filter Point Cloud:**
-    -   Identify the semantic labels (and corresponding colors) for 'ceiling' and 'floor' from the provided color maps.
-    -   Remove all points from the 3D point cloud that are classified as 'ceiling' or 'floor'.
-3.  **Extract Data:**
-    -   From the *filtered* point cloud, extract the coordinates (X, Y, Z) and the corresponding RGB color values for each point.
-4.  **Generate 2D Map:**
-    -   Create a 2D scatter plot using the **X-coordinates** (as the plot's x-axis) and the **Z-coordinates** (as the plot's y-axis) of the filtered points.
-    -   Set the color of each plotted point $(x, z)$ to its corresponding RGB color extracted in Step 3.
-5.  **Save Map:**
-    -   Save the generated 2D plot as a PNG file named `map.png`.
-6.  **Determine Coordinate Transformation:**
-    -   Establish and document the relationship (e.g., scaling and offset) between the pixel coordinates of the saved `map.png` and the original 3D Habitat coordinates (X, Z). This is critical for future tasks. You may need to add known reference points or analyze plot boundaries to calculate this transformation.
+* A pre-calculated path from the **RRT algorithm** (Part 2), available as a list of 2D pixel coordinates.
+* A functional **Habitat simulation environment**.
+* The **target category/name** is known (e.g., "chair", "table").
 
 ---
 
-# NOTES
+## 📝 Implementation Plan
 
--   **Color Map Usage:** You are provided with two color map versions. `color_01.npy` has RGB values in the [0, 1] range. `color_0255.npy` has values in the [0, 255] range. If you encounter floating-point precision issues when matching colors with `color_01.npy`, use `color_0255.npy` instead.
--   **Coordinate Scaling (if applicable):** If you are using a file named `point.npy` in relation to `apartment_0`, be aware of the scale relationship: `apartment_0_coordinates = point_array * 10000.0 / 255.0`.
--   **Final Goal:** The transformation calculated in Step 6 is necessary for "Part 3" (a subsequent task). Ensure this relationship is clearly defined.
+The implementation can be done primarily by modifying the `load.py` script or a similar entry point for the simulation.
+
+### 1. Configure Agent Actions
+
+In the function responsible for setting up the environment configuration (e.g., `make_simple_cfg`), define the discrete step sizes for the agent's actions.
+
+**Example Configuration:**
+```python
+# In your environment configuration function
+config.TASK.ACTIONS.MOVE_FORWARD.MOTION_ARGS["step_size"] = 0.25  # meters
+config.TASK.ACTIONS.TURN_LEFT.MOTION_ARGS["angle"] = 10.0      # degrees
+config.TASK.ACTIONS.TURN_RIGHT.MOTION_ARGS["angle"] = 10.0     # degrees
+````
+
+### 2\. Implement Coordinate Transformation
+
+Create a function to convert the 2D pixel coordinates from the RRT path into 3D world coordinates (`xyz`) usable by the Habitat agent. This typically involves using the simulation's projection and depth information.
+
+**Pseudocode:**
+
+```python
+function pixel_to_world(pixel_coord, depth_map):
+  # Get depth value at the pixel coordinate
+  depth_value = depth_map[pixel_coord.y, pixel_coord.x]
+
+  # Unproject the 2D point + depth to a 3D point in the camera frame
+  camera_point_3d = unproject(pixel_coord, depth_value)
+
+  # Transform the 3D point from the camera frame to the world frame
+  world_point_3d = camera_to_world_transform(camera_point_3d)
+
+  # Set the y-coordinate to the agent's height to create a navigation waypoint
+  waypoint = (world_point_3d.x, agent_height, world_point_3d.z)
+
+  return waypoint
+```
+
+### 3\. Implement the Navigation Loop
+
+The core logic will iterate through the transformed 3D waypoints and control the agent.
+
+**Steps:**
+
+1.  **Initialize**: Load the RRT path and transform all points into a list of 3D waypoints. Initialize an empty list to store RGB frames for the video.
+2.  **Loop through Waypoints**: For each waypoint in the list:
+    a.  **Calculate Heading**: Determine the angle between the agent's current forward direction and the vector pointing to the next waypoint.
+    b.  **Turn**: If the angle is greater than a small threshold, issue `turn_left` or `turn_right` commands repeatedly until the agent is facing the waypoint. Collect the RGB frame after each turn action.
+    c.  **Move Forward**: Once aligned, calculate the distance to the waypoint. Issue `move_forward` commands repeatedly until the agent is close to the waypoint. Collect the RGB frame after each move action.
+3.  **Collect Frames**: In each step of the loop (after every action), get the current RGB observation and append it to your frame list.
+
+### 4\. Highlight the Target Object
+
+At each step, before saving the RGB frame, overlay a transparent mask on the target object.
+
+**Steps:**
+
+1.  **Get Semantic Data**: For each observation, retrieve the semantic segmentation map from the simulator.
+2.  **Find Target Pixels**: Identify the pixels in the semantic map that correspond to the target object's ID.
+3.  **Create Mask**: Generate a boolean mask where `True` values correspond to the target object's pixels.
+4.  **Overlay Mask**: Create a colored overlay (e.g., semi-transparent red) and apply it to the RGB image using the mask. The reference `tutorial_adding_images` should provide guidance on blending images.
+
+### 5\. Generate Video Output
+
+After the navigation loop is complete, compile the collected frames into a video.
+
+**Steps:**
+
+1.  **Get Target Name**: Use the known target name for the output filename.
+2.  **Initialize Video Writer**: Use a library like `cv2` or `imageio` to set up a video writer.
+    ```python
+    import cv2
+    import numpy as np
+
+    height, width, layers = frames[0].shape
+    video_name = f"{target_name}.mp4"
+    # Use 'mp4v' codec for .mp4 files
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(video_name, fourcc, 10, (width, height))
+    ```
+3.  **Write Frames**: Iterate through the list of collected frames (with the highlighted target) and write each one to the video file.
+    ```python
+    for frame in frames:
+      # Convert RGB (from Habitat) to BGR (for OpenCV)
+      video.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    ```
+4.  **Save Video**: Close the video writer to save the file.
+    ```python
+    video.release()
+    ```
+
+-----
+
+## ✅ Deliverables
+
+  * A modified Python script (e.g., `load.py`) containing the full navigation and visualization logic.
+  * An output video file named **`{target_name}.mp4`** showing the agent's first-person view as it navigates the path with the target highlighted.
+
+<!-- end list -->
+
+```
+```
