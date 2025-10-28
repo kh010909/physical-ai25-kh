@@ -70,7 +70,7 @@ class RRTPathfinder:
         
         # Robot parameters
         self.robot_radius_pixels = 30.0  # Robot radius in pixels (smaller for more exploration)
-        self.safety_margin_pixels = 10.0  # Additional safety margin beyond robot radius
+        self.safety_margin_pixels = 20.0  # Additional safety margin beyond robot radius
         
         # Pathfinding state
         self.tree_nodes = []

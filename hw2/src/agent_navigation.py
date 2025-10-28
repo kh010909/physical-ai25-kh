@@ -252,20 +252,32 @@ class AgentNavigator:
         if highlighted_image.shape[-1] == 4:
             highlighted_image = highlighted_image[:, :, :3]
         
+        # Ensure we have a 3-channel RGB image
+        if len(highlighted_image.shape) != 3 or highlighted_image.shape[2] != 3:
+            print(f"Warning: Unexpected image shape {highlighted_image.shape}, converting to RGB")
+            if len(highlighted_image.shape) == 2:
+                highlighted_image = np.stack([highlighted_image] * 3, axis=2)
+            elif highlighted_image.shape[2] == 1:
+                highlighted_image = np.repeat(highlighted_image, 3, axis=2)
+        
+        # Debug: Print semantic map info
+        unique_ids = np.unique(semantic_map)
+        print(f"  [DEBUG] Semantic map contains IDs: {unique_ids[:10]}{'...' if len(unique_ids) > 10 else ''}")
+        
         # Find target object pixels in semantic map using actual semantic IDs
         target_mask = self._create_target_mask_from_semantics(semantic_map, semantic_scene)
         
         if target_mask is not None and np.any(target_mask):
+            num_target_pixels = np.sum(target_mask)
+            total_pixels = target_mask.size
+            percentage = (num_target_pixels / total_pixels) * 100
+            print(f"  [HIGHLIGHT] Found {num_target_pixels} target pixels ({percentage:.2f}% of image)")
+            
             # Create colored overlay (semi-transparent red)
             overlay_color = np.array([255, 0, 0], dtype=np.uint8)  # Red
-            alpha = 0.3  # Transparency
+            alpha = 0.4  # Increased transparency for better visibility
             
             # Apply overlay where target object is detected
-            # Ensure both arrays have the same number of channels
-            if len(highlighted_image[target_mask].shape) == 2:
-                # Handle grayscale by expanding to 3 channels
-                overlay_color = overlay_color[:1]
-            
             highlighted_image[target_mask] = (
                 (1 - alpha) * highlighted_image[target_mask] + 
                 alpha * overlay_color
