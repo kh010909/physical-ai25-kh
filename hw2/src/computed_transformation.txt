@@ -1,0 +1,23 @@
+======================================================================
+COMPUTED COORDINATE TRANSFORMATION PARAMETERS
+======================================================================
+
+Floor: 1
+
+Habitat Coordinate Ranges:
+  X: [-3.089056, 6.220782]
+  Z: [-4.929266, 9.912446]
+
+Map Dimensions:
+  Original: 1159 x 1848
+  After flip+rotate: 1848 x 1159
+
+Transformation Formulas (for transformed map):
+
+From Transformed Pixel to Habitat:
+  habitat_z = -4.929266 + (px_t / 1848) * 14.841713
+  habitat_x = 6.220782 - (py_t / 1159) * 9.309837
+
+From Habitat to Transformed Pixel:
+  px_t = ((habitat_z - -4.929266) / 14.841713) * 1848
+  py_t = ((6.220782 - habitat_x) / 9.309837) * 1159

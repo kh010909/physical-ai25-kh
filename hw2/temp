@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""
+Enhanced Load Script with Agent Navigation
+
+This is an enhanced version of load.py that incorporates the agent navigation
+functionality described in AGENTS.md. It can run in two modes:
+1. Manual control mode (original functionality)
+2. Automatic navigation mode (following RRT path)
+
+Note: Habitat imports are commented out due to environment issues.
+"""
+
+
+
+
+#!/usr/bin/env python3
+"""
+Compute Coordinate Transformation Parameters
+
+This script computes the correct transformation between the 2D map
+(after flip + rotate) and Habitat 3D coordinates using the point cloud data.
+
+It will:
+1. Load the point cloud data
+2. Apply the same transformations to the map (flip + rotate)
+3. Compute the transformation parameters
+4. Output the correct formulas to use
+"""
+
+#!/usr/bin/env python3
+"""
+2D Semantic Map Generator
+
+This script constructs a 2D semantic map by projecting a 3D semantic point cloud 
+onto a top-down (X-Z plane) view, filtering out ceiling and floor points.
+
+Requirements:
+- numpy
+- matplotlib 
+- pandas
+- openpyxl (for reading Excel files)
+
+Usage:
+    python semantic_map_generator.py
+"""
+
+
+
+#!/usr/bin/env python3
+"""
+RRT Pathfinding Implementation
+
+This module implements the Rapidly-exploring Random Tree (RRT) algorithm
+for pathfinding on a 2D semantic map.
+"""
+
+
+
+#!/usr/bin/env python3
+"""
+Agent Navigation Implementation for Habitat Simulator
+
+This module implements a navigation agent that follows a pre-computed RRT path,
+highlights target objects during navigation, and records the journey as a video.
+
+Based on the AGENTS.md task specification.
+"""
+
+
+#!/usr/bin/env python3
+"""
+Map Utilities Module
+
+This module provides utility functions for coordinate transformations,
+semantic mapping, and highlighting in the Habitat navigation system.
+"""
+
+
+
+#!/usr/bin/env python3
+"""
+Main script for 2D Semantic Map Generation
+
+This script allows manual adjustment of height filtering parameters
+using absolute Y-coordinate values.
+"""

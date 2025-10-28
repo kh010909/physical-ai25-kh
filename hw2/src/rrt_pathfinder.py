@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-RRT Pathfinding Implementation
-
-This module implements the Rapidly-exploring Random Tree (RRT) algorithm
-for pathfinding on a 2D semantic map.
-"""
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,6 +7,7 @@ from typing import Tuple, List, Optional, Dict
 import math
 import random
 import os
+import cv2
 
 
 class Node:
@@ -51,23 +44,22 @@ class RRTPathfinder:
     Rapidly-exploring Random Tree (RRT) pathfinder for 2D semantic maps.
     """
     
-    def __init__(self, map_path: str, excel_path: str, transform_path: str):
+    def __init__(self, map_path: str, excel_path: str):
         """
         Initialize the RRT pathfinder.
         
         Args:
             map_path: Path to the map image file
             excel_path: Path to the color coding Excel file
-            transform_path: Path to coordinate transformation file
         """
         self.map_path = map_path
         self.excel_path = excel_path
-        self.transform_path = transform_path
+        # Note: transform_path is kept for backward compatibility but not used
+        # RRT works purely in 2D pixel space. Transformation to 3D happens in agent_navigation.py
         
         # Load data
         self.map_image = None
         self.color_mapping = {}
-        self.transform_params = {}
         self.load_data()
         
         # RRT parameters
@@ -77,7 +69,7 @@ class RRTPathfinder:
         self.goal_bias_probability = 0.1  # 10% chance to sample toward goal
         
         # Robot parameters
-        self.robot_radius_pixels = 20.0  # Robot radius in pixels (smaller for more exploration)
+        self.robot_radius_pixels = 30.0  # Robot radius in pixels (smaller for more exploration)
         self.safety_margin_pixels = 10.0  # Additional safety margin beyond robot radius
         
         # Pathfinding state
@@ -104,12 +96,31 @@ class RRTPathfinder:
         self._create_obstacle_map()
     
     def load_data(self):
-        """Load map image, color mapping, and transformation parameters."""
-        print("Loading map and transformation data...")
+        """Load map image and color mapping."""
+        print("Loading map and color mapping data...")
         
         # Load map image
         self.map_image = mpimg.imread(self.map_path)
-        print(f"Loaded map image: {self.map_image.shape}")
+        print(f"Loaded original map image: {self.map_image.shape}")
+        
+        # CRITICAL: Apply the SAME transformations as test_interactive_transformation.py
+        # to ensure coordinate systems match between RRT planning and Habitat navigation
+        print("Applying map transformations to match Habitat coordinate system...")
+        
+        # Convert to uint8 for cv2 operations
+        map_uint8 = (self.map_image * 255).astype(np.uint8)
+        
+        # 1. Flip horizontally (left-right mirror)
+        map_flipped = cv2.flip(map_uint8, 1)
+        
+        # 2. Rotate 90 degrees clockwise
+        map_rotated = cv2.rotate(map_flipped, cv2.ROTATE_90_CLOCKWISE)
+        
+        # Convert back to float [0, 1] for compatibility with matplotlib
+        self.map_image = map_rotated.astype(np.float32) / 255.0
+        
+        print(f"Map transformed to: {self.map_image.shape}")
+        print(" Map is now aligned with Habitat coordinate system!")
         
         # Load color mapping from Excel file
         df = pd.read_excel(self.excel_path)
@@ -124,48 +135,6 @@ class RRTPathfinder:
             self.color_mapping[name] = (r, g, b)
         
         print(f"Loaded {len(self.color_mapping)} color mappings")
-        
-        # Load transformation parameters
-        self._load_transform_params()
-    
-    def _load_transform_params(self):
-        """Load coordinate transformation parameters from file."""
-        with open(self.transform_path, 'r') as f:
-            content = f.read()
-        
-        # Parse transformation parameters
-        lines = content.split('\n')
-        for line in lines:
-            if 'X:' in line and 'habitat_x_range' not in self.transform_params:
-                # Parse X range
-                parts = line.split('[')[1].split(']')[0].split(', ')
-                x_min, x_max = float(parts[0]), float(parts[1])
-                self.transform_params['habitat_x_range'] = (x_min, x_max)
-            elif 'Z:' in line and 'habitat_z_range' not in self.transform_params:
-                # Parse Z range
-                parts = line.split('[')[1].split(']')[0].split(', ')
-                z_min, z_max = float(parts[0]), float(parts[1])
-                self.transform_params['habitat_z_range'] = (z_min, z_max)
-            elif 'Width:' in line:
-                width = float(line.split()[-2])
-                self.transform_params['image_width_px'] = width
-            elif 'Height:' in line:
-                height = float(line.split()[-2])
-                self.transform_params['image_height_px'] = height
-            elif 'X scale:' in line:
-                scale = float(line.split()[-2])
-                self.transform_params['x_scale'] = scale
-            elif 'Z scale:' in line:
-                scale = float(line.split()[-2])
-                self.transform_params['z_scale'] = scale
-            elif 'px = (x -' in line:
-                offset = float(line.split('(x - ')[1].split(')')[0])
-                self.transform_params['x_offset'] = offset
-            elif 'py = (z -' in line:
-                offset = float(line.split('(z - ')[1].split(')')[0])
-                self.transform_params['z_offset'] = offset
-        
-        print("Loaded coordinate transformation parameters")
     
     def _get_obstacle_colors(self) -> List[Tuple[int, int, int]]:
         """Get list of colors that represent obstacles (non-navigable areas)."""
@@ -273,9 +242,9 @@ class RRTPathfinder:
         matplotlib.use('TkAgg')
         
         print(f"\nTarget category: {target_category}")
-        print("🖱️  LEFT CLICK on the map to select your starting point...")
-        print("🖱️  RIGHT CLICK to reset selection")
-        print("❌ CLOSE WINDOW when done")
+        print(" LEFT CLICK on the map to select your starting point...")
+        print(" RIGHT CLICK to reset selection")
+        print(" CLOSE WINDOW when done")
         
         # Find goal point for display
         try:
@@ -296,9 +265,9 @@ class RRTPathfinder:
         
         # Add instructions
         ax.text(0.02, 0.98, 
-               "🖱️  LEFT CLICK: Select starting point\n"
-               "🖱️  RIGHT CLICK: Reset selection\n" 
-               "❌ CLOSE WINDOW: Confirm selection",
+               " LEFT CLICK: Select starting point\n"
+               " RIGHT CLICK: Reset selection\n" 
+               " CLOSE WINDOW: Confirm selection",
                transform=ax.transAxes, verticalalignment='top', fontsize=11,
                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
         
@@ -333,9 +302,9 @@ class RRTPathfinder:
                     ax.legend()
                     plt.draw()
                     
-                    print(f"✓ Valid starting point selected: ({x}, {y})")
+                    print(f" Valid starting point selected: ({x}, {y})")
                 else:
-                    print(f"✗ Invalid point ({x}, {y}) - too close to obstacles!")
+                    print(f" Invalid point ({x}, {y}) - too close to obstacles!")
                     # Show warning marker
                     warning = ax.plot(x, y, 'X', color='red', markersize=12, markeredgewidth=3)[0]
                     plt.draw()
@@ -354,7 +323,7 @@ class RRTPathfinder:
                 clicked_point.clear()
                 ax.legend()
                 plt.draw()
-                print("🔄 Selection reset")
+                print(" Selection reset")
         
         # Connect click event
         fig.canvas.mpl_connect('button_press_event', on_click)
@@ -660,12 +629,13 @@ class RRTPathfinder:
         path.reverse()
         return path
     
-    def visualize_path(self, output_path: str = "path_result.png"):
+    def visualize_path(self, output_path: str = "path_result.png", show: bool = False):
         """
         Visualize the found path on the map and save the result.
         
         Args:
             output_path: Path to save the visualization
+            show: Whether to display the plot window (blocks execution if True)
         """
         if not self.path:
             print("No path to visualize!")
@@ -708,133 +678,113 @@ class RRTPathfinder:
         
         plt.tight_layout()
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.show()
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)  # Close the figure to free memory
         
         print(f"Path visualization saved to: {output_path}")
     
-    def visualize_obstacle_map(self, output_path: str = "obstacle_map.png"):
-        """
-        Visualize the obstacle map for debugging purposes.
+    # def visualize_obstacle_map(self, output_path: str = "obstacle_map.png", show: bool = False):
+    #     """
+    #     Visualize the obstacle map for debugging purposes.
         
-        Args:
-            output_path: Path to save the obstacle map visualization
-        """
-        if self.obstacle_map is None:
-            print("No obstacle map to visualize!")
-            return
+    #     Args:
+    #         output_path: Path to save the obstacle map visualization
+    #         show: Whether to display the plot window (blocks execution if True)
+    #     """
+    #     if self.obstacle_map is None:
+    #         print("No obstacle map to visualize!")
+    #         return
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
+    #     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
         
-        # Original map
-        ax1.imshow(self.map_image)
-        ax1.set_title('Original Map')
-        ax1.axis('off')
+    #     # Original map
+    #     ax1.imshow(self.map_image)
+    #     ax1.set_title('Original Map')
+    #     ax1.axis('off')
         
-        # Obstacle map
-        ax2.imshow(self.obstacle_map, cmap='gray')
-        ax2.set_title(f'Obstacle Map (Robot Radius: {self.robot_radius_pixels:.1f}px + Safety: {self.safety_margin_pixels:.1f}px)')
-        ax2.axis('off')
+    #     # Obstacle map
+    #     ax2.imshow(self.obstacle_map, cmap='gray')
+    #     ax2.set_title(f'Obstacle Map (Robot Radius: {self.robot_radius_pixels:.1f}px + Safety: {self.safety_margin_pixels:.1f}px)')
+    #     ax2.axis('off')
         
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        plt.show()
+    #     plt.tight_layout()
+    #     plt.savefig(output_path, dpi=150, bbox_inches='tight')
         
-        print(f"Obstacle map visualization saved to: {output_path}")
+    #     if show:
+    #         plt.show()
+    #     else:
+    #         plt.close(fig)  # Close the figure to free memory
+        
+    #     print(f"Obstacle map visualization saved to: {output_path}")
     
-    def pixel_to_habitat_coordinates(self, pixel_path: List[Node]) -> List[Tuple[float, float]]:
-        """
-        Transform pixel coordinates to habitat coordinate system.
+    # def run_pathfinding(self, target_category: str) -> Tuple[List[Node], List[Tuple[float, float]]]:
+    #     """
+    #     Complete pathfinding pipeline.
         
-        Args:
-            pixel_path: List of nodes in pixel coordinates
+    #     Args:
+    #         target_category: Target object category
             
-        Returns:
-            List of (x, z) coordinates in habitat coordinate system
-        """
-        if not pixel_path:
-            return []
+    #     Returns:
+    #         Tuple of (pixel_path, habitat_coordinates)
+    #     """
+    #     # Step 1: Get user's starting point
+    #     start_point = self.display_map_for_selection(target_category)
         
-        habitat_coords = []
+    #     # Step 2: Find goal point
+    #     goal_point = self.find_goal_point(target_category)
         
-        for node in pixel_path:
-            # Convert from pixel to habitat coordinates using transformation parameters
-            habitat_x = node.x / self.transform_params['x_scale'] + self.transform_params['x_offset']
-            habitat_z = node.y / self.transform_params['z_scale'] + self.transform_params['z_offset']
-            
-            habitat_coords.append((habitat_x, habitat_z))
+    #     # Step 3: Run RRT algorithm
+    #     path = self.run_rrt(start_point, goal_point)
         
-        return habitat_coords
-    
-    def run_pathfinding(self, target_category: str) -> Tuple[List[Node], List[Tuple[float, float]]]:
-        """
-        Complete pathfinding pipeline.
+    #     if not path:
+    #         print("No path found!")
+    #         return [], []
         
-        Args:
-            target_category: Target object category
-            
-        Returns:
-            Tuple of (pixel_path, habitat_coordinates)
-        """
-        # Step 1: Get user's starting point
-        start_point = self.display_map_for_selection(target_category)
+    #     # Step 4: Visualize result
+    #     self.visualize_path()
         
-        # Step 2: Find goal point
-        goal_point = self.find_goal_point(target_category)
+    #     # Step 5: Return pixel path (transformation to 3D happens in agent_navigation.py)
+    #     print(f"\n✅ Path found with {len(path)} waypoints in pixel space")
+    #     print("   (Transformation to 3D Habitat coordinates will be done by agent_navigation.py)")
         
-        # Step 3: Run RRT algorithm
-        path = self.run_rrt(start_point, goal_point)
-        
-        if not path:
-            print("No path found!")
-            return [], []
-        
-        # Step 4: Visualize result
-        self.visualize_path()
-        
-        # Step 5: Transform to habitat coordinates
-        habitat_coords = self.pixel_to_habitat_coordinates(path)
-        
-        print(f"\nPath found with {len(path)} points:")
-        print("Habitat coordinates:")
-        for i, (x, z) in enumerate(habitat_coords):
-            print(f"  {i}: ({x:.3f}, {z:.3f})")
-        
-        return path, habitat_coords
+    #     return path, []  # Return empty list for habitat_coords (deprecated)
 
 
-def main():
-    """Main function to run the RRT pathfinding."""
-    # File paths
-    map_path = "map.png"
-    excel_path = "../color_coding_semantic_segmentation_classes.xlsx"
-    transform_path = "coordinate_transformation.txt"
+# def main():
+#     """Main function to run the RRT pathfinding."""
+#     # File paths
+#     map_path = "map.png"
+#     excel_path = "../color_coding_semantic_segmentation_classes.xlsx"
     
-    # Initialize pathfinder
-    pathfinder = RRTPathfinder(map_path, excel_path, transform_path)
+#     # Initialize pathfinder
+#     pathfinder = RRTPathfinder(map_path, excel_path)
     
-    # Get target category from user
-    print("Available target categories:")
-    for category in pathfinder.target_categories.keys():
-        print(f"  - {category}")
+#     # Get target category from user
+#     print("Available target categories:")
+#     for category in pathfinder.target_categories.keys():
+#         print(f"  - {category}")
     
-    target_category = input("\nEnter target category: ").strip().lower()
+#     target_category = input("\nEnter target category: ").strip().lower()
     
-    if target_category not in pathfinder.target_categories:
-        print(f"Invalid category! Choose from: {list(pathfinder.target_categories.keys())}")
-        return
+#     if target_category not in pathfinder.target_categories:
+#         print(f"Invalid category! Choose from: {list(pathfinder.target_categories.keys())}")
+#         return
     
-    # Run pathfinding
-    try:
-        pixel_path, habitat_coords = pathfinder.run_pathfinding(target_category)
+#     # Run pathfinding
+#     try:
+#         pixel_path, habitat_coords = pathfinder.run_pathfinding(target_category)
         
-        if habitat_coords:
-            print(f"\nPathfinding successful! Found path to {target_category}.")
-        else:
-            print(f"\nPathfinding failed. Could not find path to {target_category}.")
+#         if habitat_coords:
+#             print(f"\nPathfinding successful! Found path to {target_category}.")
+#         else:
+#             print(f"\nPathfinding failed. Could not find path to {target_category}.")
             
-    except Exception as e:
-        print(f"Error during pathfinding: {e}")
+#     except Exception as e:
+#         print(f"Error during pathfinding: {e}")
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

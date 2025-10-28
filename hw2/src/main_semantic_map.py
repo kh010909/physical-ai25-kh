@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-Main script for 2D Semantic Map Generation
-
-This script allows manual adjustment of height filtering parameters
-using absolute Y-coordinate values.
-"""
-
 from semantic_map_generator import SemanticMapGenerator
 import os
 
@@ -55,12 +47,15 @@ def main():
     # )
     
     # Generate and save the map
-    print()
-    transformation = generator.generate_2d_map(filtered_points, filtered_colors)
-    print()
-    generator.save_transformation(transformation)
-    print()
-    print("=== 2D Semantic Map Generation Complete ===")
+
+    generator.generate_2d_map(filtered_points, filtered_colors)
+
+    # # generator.save_transformation(transformation)
+    # if not success:
+    #     print("Error: Map generation failed.")
+    #     return
+    # else:
+    #     print("=== 2D Semantic Map Generation Complete ===")
 
 
 if __name__ == "__main__":

@@ -1,36 +1,20 @@
-#!/usr/bin/env python3
-"""
-Enhanced Load Script with Agent Navigation
+import argparse
+import os
+import shutil
 
-This is an enhanced version of load.py that incorporates the agent navigation
-functionality described in AGENTS.md. It can run in two modes:
-1. Manual control mode (original functionality)
-2. Automatic navigation mode (following RRT path)
-
-Note: Habitat imports are commented out due to environment issues.
-"""
-
+import cv2
+# Habitat imports
+import habitat_sim
 import numpy as np
 from PIL import Image
-import cv2
-import os
-import sys
-import argparse
-import shutil
-import math
-from typing import List, Tuple, Optional
+from habitat_sim.utils.common import d3_40_colors_rgb
 
 # Import our agent navigation module
 from agent_navigation import AgentNavigator
 from rrt_pathfinder import RRTPathfinder
 
-# Habitat imports
-import habitat_sim
-from habitat_sim.utils.common import d3_40_colors_rgb
-
-
 # Scene configuration
-test_scene = "replica_v1/apartment_0/habitat/mesh_semantic.ply"
+test_scene = "../replica_v1/apartment_0/habitat/mesh_semantic.ply"
 
 sim_settings = {
     "scene": test_scene,
@@ -109,15 +93,24 @@ def make_simple_cfg(settings):
 
     agent_cfg.sensor_specifications = [rgb_sensor_spec, depth_sensor_spec, semantic_sensor_spec]
 
-    # Create configuration
-    cfg = habitat_sim.Configuration(sim_cfg, [agent_cfg])
+    # Define action space for navigation
+    action_space = {
+        "move_forward": habitat_sim.ActionSpec(
+            "move_forward",
+            habitat_sim.ActuationSpec(amount=0.25)
+        ),
+        "turn_left": habitat_sim.ActionSpec(
+            "turn_left",
+            habitat_sim.ActuationSpec(amount=np.deg2rad(10.0))
+        ),
+        "turn_right": habitat_sim.ActionSpec(
+            "turn_right",
+            habitat_sim.ActuationSpec(amount=np.deg2rad(10.0))
+        ),
+    }
+    agent_cfg.action_space = action_space
     
-    # Configure agent actions as per AGENTS.md specification
-    cfg.TASK.ACTIONS.MOVE_FORWARD.MOTION_ARGS["step_size"] = 0.25  # meters
-    cfg.TASK.ACTIONS.TURN_LEFT.MOTION_ARGS["angle"] = 10.0      # degrees
-    cfg.TASK.ACTIONS.TURN_RIGHT.MOTION_ARGS["angle"] = 10.0     # degrees
-    
-    return cfg
+    return habitat_sim.Configuration(sim_cfg, [agent_cfg])
 
 
 def navigate_and_see(action="", data_root='data_collection/second_floor/', auto_mode=False, target_category=None):
@@ -176,17 +169,76 @@ def navigate_and_see(action="", data_root='data_collection/second_floor/', auto_
 
 
 
-def run_automatic_navigation(target_category: str, data_root: str):
+def select_target_category():
+    """
+    Interactive menu to select target category from available options.
+    
+    Returns:
+        str: Selected target category
+    """
+    try:
+        # Check for required files
+        required_files = [
+            'map.png',
+            '../color_coding_semantic_segmentation_classes.xlsx',
+        ]
+        
+        missing_files = [f for f in required_files if not os.path.exists(f)]
+        if missing_files:
+            print(f" Missing required files: {missing_files}")
+            print(" Please run semantic map generation first (main_semantic_map.py)")
+            return None
+        
+        # Initialize pathfinder to get available categories
+        pathfinder = RRTPathfinder(
+            'map.png',
+            '../color_coding_semantic_segmentation_classes.xlsx',
+        )
+        
+        categories = list(pathfinder.target_categories.keys())
+        
+        print("\n Available target categories:")
+        for i, category in enumerate(categories, 1):
+            color = pathfinder.target_categories[category]
+            print(f"  {i}. {category.upper()} (RGB: {color})")
+        
+        while True:
+            try:
+                user_input = input("\n Select target category (name or number): ").strip().lower()
+                
+                if user_input.isdigit():
+                    choice_num = int(user_input)
+                    if 1 <= choice_num <= len(categories):
+                        return categories[choice_num - 1]
+                    else:
+                        print(f" Invalid number! Please enter 1-{len(categories)}")
+                elif user_input in categories:
+                    return user_input
+                else:
+                    print(f" Invalid choice! Available: {', '.join(categories)}")
+                    
+            except ValueError:
+                print(" Invalid input!")
+        
+    except Exception as e:
+        print(f" Error during target selection: {e}")
+        return None
+
+
+def run_automatic_navigation(target_category: str, data_root: str, interactive_start: bool = True, floor: int = 1):
     """
     Run automatic navigation mode following RRT path with Habitat.
     
     Args:
         target_category: Target object category
         data_root: Directory to save data
+        interactive_start: Whether to allow user to click starting point
+        floor: Floor number (1 or 2)
     """
     global navigator, count, sim, agent
     
-    print(f"\n🤖 Starting automatic navigation to: {target_category.upper()}")
+    print(f"\n Starting automatic navigation to: {target_category.upper()}")
+    print(f" Floor: {floor}")
     print("=" * 60)
     
     try:
@@ -194,113 +246,134 @@ def run_automatic_navigation(target_category: str, data_root: str):
         required_files = [
             'map.png',
             '../color_coding_semantic_segmentation_classes.xlsx',
-            'coordinate_transformation.txt'
         ]
         
         missing_files = [f for f in required_files if not os.path.exists(f)]
         if missing_files:
-            print(f"❌ Missing required files: {missing_files}")
-            print("💡 Please run RRT pathfinding first (main_rrt.py)")
+            print(f" Missing required files: {missing_files}")
+            print(" Please run semantic map generation first (main_semantic_map.py)")
             return False
         
         # Initialize RRT pathfinder
-        print("🔧 Initializing RRT pathfinder...")
+        print(" Initializing RRT pathfinder...")
         pathfinder = RRTPathfinder(
             'map.png',
             '../color_coding_semantic_segmentation_classes.xlsx',
-            'coordinate_transformation.txt'
         )
         
-        # Initialize navigator
-        navigator = AgentNavigator(pathfinder, target_category)
+        # Initialize navigator with floor parameter
+        navigator = AgentNavigator(pathfinder, target_category, floor=floor)
+        
+        # Get starting point - interactive or default
+        print("\n Starting point selection:")
+        if interactive_start:
+            print("  You will now select the starting point by clicking on the map...")
+            start_point = pathfinder.display_map_for_selection(target_category)
+            print(f" Starting point selected: {start_point}")
+        else:
+            # Use default starting point
+            default_starts = {
+                'sofa': (300, 500),
+                'rack': (600, 400),
+                'cushion': (700, 600),
+                'stair': (400, 800),
+                'cooktop': (200, 300)
+            }
+            start_point = default_starts.get(target_category, (400, 400))
+            print(f" Using default starting point: {start_point}")
         
         # Get RRT path
-        print("🗺️ Computing RRT path...")
-        start_point = (300, 500)  # Default start point
+        print(" Computing RRT path...")
         goal_point = pathfinder.find_goal_point(target_category)
         
         if not goal_point:
-            print(f"❌ No {target_category} found in the map")
+            print(f" No {target_category} found in the map")
             return False
         
         pixel_path = pathfinder.run_rrt(start_point, goal_point)
         
         if not pixel_path:
-            print("❌ No path found by RRT algorithm")
+            print(" No path found by RRT algorithm")
             return False
         
-        print(f"✅ RRT path found with {len(pixel_path)} waypoints")
+        print(f" RRT path found with {len(pixel_path)} waypoints")
+        
+        # Visualize and save the RRT path
+        print(" Generating RRT path visualization...")
+        visualization_path = f"{target_category}_rrt_path.png"
+        pathfinder.visualize_path(output_path=visualization_path)
+        print(f" RRT visualization saved as: {visualization_path}")
         
         # Run navigation using the AgentNavigator with Habitat
-        print("🚀 Beginning automatic navigation with Habitat...")
+        print(" Beginning automatic navigation with Habitat...")
         video_path = navigator.run_navigation(pixel_path, sim, agent)
         
-        print(f"\n✅ Automatic navigation completed!")
-        print(f"🎬 Video saved as: {video_path}")
+        print(f"\n Automatic navigation completed!")
+        print(f" Video saved as: {video_path}")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error during automatic navigation: {e}")
+        print(f" Error during automatic navigation: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
-def generate_video_from_saved_frames(data_root: str, target_category: str):
-    """
-    Generate video from saved RGB frames.
+# def generate_video_from_saved_frames(data_root: str, target_category: str):
+#     """
+#     Generate video from saved RGB frames.
     
-    Args:
-        data_root: Directory containing saved frames
-        target_category: Target object category for video naming
-    """
-    try:
-        rgb_dir = os.path.join(data_root, "rgb")
-        if not os.path.exists(rgb_dir):
-            print("❌ No RGB frames found")
-            return
+#     Args:
+#         data_root: Directory containing saved frames
+#         target_category: Target object category for video naming
+#     """
+#     try:
+#         rgb_dir = os.path.join(data_root, "rgb")
+#         if not os.path.exists(rgb_dir):
+#             print(" No RGB frames found")
+#             return
         
-        # Get list of frame files
-        frame_files = sorted([f for f in os.listdir(rgb_dir) if f.endswith('.png')])
+#         # Get list of frame files
+#         frame_files = sorted([f for f in os.listdir(rgb_dir) if f.endswith('.png')])
         
-        if not frame_files:
-            print("❌ No frame files found")
-            return
+#         if not frame_files:
+#             print(" No frame files found")
+#             return
         
-        # Read first frame to get dimensions
-        first_frame_path = os.path.join(rgb_dir, frame_files[0])
-        first_frame = cv2.imread(first_frame_path)
+#         # Read first frame to get dimensions
+#         first_frame_path = os.path.join(rgb_dir, frame_files[0])
+#         first_frame = cv2.imread(first_frame_path)
         
-        if first_frame is None:
-            print("❌ Could not read first frame")
-            return
+#         if first_frame is None:
+#             print(" Could not read first frame")
+#             return
         
-        height, width, layers = first_frame.shape
+#         height, width, layers = first_frame.shape
         
-        # Set up video writer
-        video_name = f"{target_category}_navigation.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_writer = cv2.VideoWriter(video_name, fourcc, 10, (width, height))
+#         # Set up video writer
+#         video_name = f"{target_category}_navigation.mp4"
+#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#         video_writer = cv2.VideoWriter(video_name, fourcc, 10, (width, height))
         
-        print(f"📹 Writing {len(frame_files)} frames to {video_name}...")
+#         print(f"📹 Writing {len(frame_files)} frames to {video_name}...")
         
-        # Write frames to video
-        for i, frame_file in enumerate(frame_files):
-            frame_path = os.path.join(rgb_dir, frame_file)
-            frame = cv2.imread(frame_path)
+#         # Write frames to video
+#         for i, frame_file in enumerate(frame_files):
+#             frame_path = os.path.join(rgb_dir, frame_file)
+#             frame = cv2.imread(frame_path)
             
-            if frame is not None:
-                video_writer.write(frame)
+#             if frame is not None:
+#                 video_writer.write(frame)
                 
-                if (i + 1) % 10 == 0:
-                    print(f"   Written {i + 1}/{len(frame_files)} frames...")
+#                 if (i + 1) % 10 == 0:
+#                     print(f"   Written {i + 1}/{len(frame_files)} frames...")
         
-        video_writer.release()
-        print(f"✅ Video saved successfully: {video_name}")
+#         video_writer.release()
+#         print(f" Video saved successfully: {video_name}")
         
-    except Exception as e:
-        print(f"❌ Error generating video: {e}")
+#     except Exception as e:
+#         print(f" Error generating video: {e}")
 
 
 def main():
@@ -311,20 +384,22 @@ def main():
     
     parser = argparse.ArgumentParser(description="Enhanced Habitat Agent with Navigation")
     parser.add_argument('-f', '--floor', type=int, default=1, help='Floor number (1 or 2)')
-    parser.add_argument('-m', '--mode', type=str, default='manual', 
+    parser.add_argument('-m', '--mode', type=str, default='auto',
                        choices=['manual', 'auto'], help='Control mode (manual or auto)')
-    parser.add_argument('-t', '--target', type=str, default='sofa',
-                       choices=['sofa', 'rack', 'cushion', 'stair', 'cooktop'],
-                       help='Target object category for automatic mode')
+    parser.add_argument('-t', '--target', type=str, default=None,
+                       help='Target object category for automatic mode (optional, will prompt if not provided)')
+    parser.add_argument('--interactive', action='store_true', default=True,
+                       help='Enable interactive starting point selection (default: True)')
+    parser.add_argument('--no-interactive', dest='interactive', action='store_false',
+                       help='Disable interactive starting point selection')
     
     args = parser.parse_args()
     
-    print("🏠 Enhanced Habitat Agent with Navigation")
+    print(" Enhanced Habitat Agent with Navigation")
     print("=" * 50)
     print(f"Mode: {args.mode.upper()}")
     print(f"Floor: {args.floor}")
-    if args.mode == 'auto':
-        print(f"Target: {args.target.upper()}")
+    print(f"Interactive mode: {'ENABLED' if args.interactive else 'DISABLED'}")
     
     # Set up data collection directory
     if args.floor == 1:
@@ -341,22 +416,64 @@ def main():
     for sub_dir in ['rgb/', 'depth/', 'semantic/']:
         os.makedirs(data_root + sub_dir)
     
-    print(f"📁 Data will be saved to: {data_root}")
+    print(f" Data will be saved to: {data_root}")
     
     # Initialize Habitat simulator
     cfg = make_simple_cfg(sim_settings)
     sim = habitat_sim.Simulator(cfg)
     agent = sim.initialize_agent(sim_settings["default_agent"])
     
-    print("✅ Habitat simulator initialized")
+    print(" Habitat simulator initialized")
     
-    # Set initial agent state
+    # INITIAL DEBUG VIEW - Show agent position BEFORE anything else
+    print("\n" + "="*60)
+    print(" INITIAL AGENT POSITION DEBUG VIEW")
+    print("="*60)
+    
+    # Set initial agent state based on floor
     agent_state = habitat_sim.AgentState()
     if args.floor == 1:
-        agent_state.position = np.array([0.0, 0.0, 0.0])
+        # Y=0 is at floor 2 level, so floor 1 is below at negative Y
+        agent_state.position = np.array([0.0, -1.5, 0.0])
     elif args.floor == 2:
-        agent_state.position = np.array([0.0, 1.0, -1.0])
+        agent_state.position = np.array([0.0, 0.0, 0.0])
     agent.set_state(agent_state)
+    
+    # Get initial observations
+    initial_obs = sim.get_sensor_observations()
+    initial_rgb = initial_obs["color_sensor"]
+    initial_semantic = initial_obs["semantic_sensor"]
+    
+    # Get agent state info
+    current_state = agent.get_state()
+    current_pos = current_state.position
+    
+    # Display initial view
+    display_img = cv2.cvtColor(initial_rgb, cv2.COLOR_RGB2BGR)
+    
+    # Add info overlay
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(display_img, f"INITIAL AGENT VIEW - Floor {args.floor}", 
+               (10, 30), font, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+    cv2.putText(display_img, f"Position: ({current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f})", 
+               (10, 60), font, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(display_img, f"Mode: {args.mode.upper()}", 
+               (10, 90), font, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(display_img, "Press any key to continue...", 
+               (10, display_img.shape[0] - 20), font, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    
+    print(f" Agent initial position: ({current_pos[0]:.3f}, {current_pos[1]:.3f}, {current_pos[2]:.3f})")
+    print(f" Floor: {args.floor}")
+    print(f" Mode: {args.mode}")
+    print("\n  Showing initial view window...")
+    print("   Press any key in the window to continue...")
+    
+    cv2.imshow("Initial Agent Position - DEBUG", display_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+    print(" Debug view closed. Continuing...\n")
+    print("="*60 + "\n")
     
     # Get available actions
     action_names = list(cfg.agents[sim_settings["default_agent"]].action_space.keys())
@@ -364,13 +481,24 @@ def main():
     
     if args.mode == 'auto':
         # Automatic navigation mode
-        print(f"\n🤖 Starting automatic navigation to {args.target}...")
-        success = run_automatic_navigation(args.target, data_root)
+        
+        # Get target category - either from args or interactive selection
+        if args.target is None:
+            print("\n Target category not specified. Starting interactive selection...")
+            target_category = select_target_category()
+            if target_category is None:
+                print(" No target category selected. Exiting.")
+                return
+        else:
+            target_category = args.target.lower()
+        
+        print(f"\n Starting automatic navigation to {target_category}...")
+        success = run_automatic_navigation(target_category, data_root, interactive_start=args.interactive, floor=args.floor)
         
         if success:
-            print("\n🎉 Automatic navigation completed successfully!")
+            print("\n Automatic navigation completed successfully!")
         else:
-            print("\n❌ Automatic navigation failed")
+            print("\n Automatic navigation failed")
             
     else:
         # Manual control mode (original functionality)
@@ -418,10 +546,10 @@ def main():
     # Save camera extrinsics
     np.save(data_root + 'GT_pose.npy', np.asarray(cam_extr))
     
-    print(f"\n📊 Session completed:")
+    print(f"\n Session completed:")
     print(f"  • Total frames: {count}")
     print(f"  • Data saved to: {data_root}")
-    print("✅ All data saved successfully!")
+    print(" All data saved successfully!")
 
 
 if __name__ == "__main__":
