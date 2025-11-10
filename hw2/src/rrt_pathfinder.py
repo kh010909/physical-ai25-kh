@@ -64,13 +64,13 @@ class RRTPathfinder:
         
         # RRT parameters
         self.step_size = 50.0  # pixels - larger steps for more exploration
-        self.max_iterations = 3000  # fewer iterations since steps are bigger
-        self.goal_tolerance = 25.0  # pixels
-        self.goal_bias_probability = 0.1  # 10% chance to sample toward goal
+        self.max_iterations = 10000  # fewer iterations since steps are bigger
+        self.goal_tolerance = 15.0  # pixels
+        self.goal_bias_probability = 0.3  # 30% chance to sample toward goal
         
         # Robot parameters
-        self.robot_radius_pixels = 30.0  # Robot radius in pixels (smaller for more exploration)
-        self.safety_margin_pixels = 20.0  # Additional safety margin beyond robot radius
+        self.robot_radius_pixels = 15.0  # Robot radius in pixels (smaller for more exploration)
+        self.safety_margin_pixels = 12.0  # Additional safety margin beyond robot radius
         
         # Pathfinding state
         self.tree_nodes = []
@@ -143,7 +143,7 @@ class RRTPathfinder:
             'wall', 'door', 'cabinet', 'base-cabinet', 'wall-cabinet',
             'refrigerator', 'major-appliance', 'desk', 'table', 'chair',
             'bed', 'bathtub', 'toilet', 'sink', 'shower-stall',
-            'countertop', 'ceiling', 'pillar', 'beam'
+            'countertop', 'ceiling', 'pillar', 'beam', 'window', 'stair'
         ]
         
         obstacle_colors = []
@@ -366,19 +366,26 @@ class RRTPathfinder:
             raise ValueError(f"No pixels found for category {target_category}")
         
         print(f"Found {len(target_pixels[0])} pixels for {target_category}")
-        
-        # Calculate centroid of target object
-        centroid_y = int(np.mean(target_pixels[0]))
-        centroid_x = int(np.mean(target_pixels[1]))
-        
-        print(f"Target object centroid: ({centroid_x}, {centroid_y})")
-        
-        # Find nearest navigable pixel to centroid
-        goal_point = self._find_nearest_navigable_pixel(centroid_x, centroid_y)
+
+        if target_category.lower() == 'stair':
+            y_coords, x_coords = target_pixels
+            min_x, max_x = np.min(x_coords), np.max(x_coords)
+            min_y, max_y = np.min(y_coords), np.max(y_coords)
+            x = max_x
+            y = min(self.map_image.shape[0] - 1, max_y)
+            goal_point = self._find_nearest_navigable_pixel(x, y)
+        else:
+            # Calculate centroid of target object
+            centroid_y = int(np.mean(target_pixels[0]))
+            centroid_x = int(np.mean(target_pixels[1]))
+
+            print(f"Target object centroid: ({centroid_x}, {centroid_y})")
+            # Find nearest navigable pixel to centroid
+            goal_point = self._find_nearest_navigable_pixel(centroid_x, centroid_y)
         
         print(f"Goal point: {goal_point}")
         return goal_point
-    
+
     def _find_nearest_navigable_pixel(self, x: int, y: int) -> Tuple[int, int]:
         """
         Find the nearest navigable pixel to the given coordinates.
@@ -686,105 +693,3 @@ class RRTPathfinder:
         
         print(f"Path visualization saved to: {output_path}")
     
-    # def visualize_obstacle_map(self, output_path: str = "obstacle_map.png", show: bool = False):
-    #     """
-    #     Visualize the obstacle map for debugging purposes.
-        
-    #     Args:
-    #         output_path: Path to save the obstacle map visualization
-    #         show: Whether to display the plot window (blocks execution if True)
-    #     """
-    #     if self.obstacle_map is None:
-    #         print("No obstacle map to visualize!")
-    #         return
-        
-    #     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
-        
-    #     # Original map
-    #     ax1.imshow(self.map_image)
-    #     ax1.set_title('Original Map')
-    #     ax1.axis('off')
-        
-    #     # Obstacle map
-    #     ax2.imshow(self.obstacle_map, cmap='gray')
-    #     ax2.set_title(f'Obstacle Map (Robot Radius: {self.robot_radius_pixels:.1f}px + Safety: {self.safety_margin_pixels:.1f}px)')
-    #     ax2.axis('off')
-        
-    #     plt.tight_layout()
-    #     plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        
-    #     if show:
-    #         plt.show()
-    #     else:
-    #         plt.close(fig)  # Close the figure to free memory
-        
-    #     print(f"Obstacle map visualization saved to: {output_path}")
-    
-    # def run_pathfinding(self, target_category: str) -> Tuple[List[Node], List[Tuple[float, float]]]:
-    #     """
-    #     Complete pathfinding pipeline.
-        
-    #     Args:
-    #         target_category: Target object category
-            
-    #     Returns:
-    #         Tuple of (pixel_path, habitat_coordinates)
-    #     """
-    #     # Step 1: Get user's starting point
-    #     start_point = self.display_map_for_selection(target_category)
-        
-    #     # Step 2: Find goal point
-    #     goal_point = self.find_goal_point(target_category)
-        
-    #     # Step 3: Run RRT algorithm
-    #     path = self.run_rrt(start_point, goal_point)
-        
-    #     if not path:
-    #         print("No path found!")
-    #         return [], []
-        
-    #     # Step 4: Visualize result
-    #     self.visualize_path()
-        
-    #     # Step 5: Return pixel path (transformation to 3D happens in agent_navigation.py)
-    #     print(f"\n✅ Path found with {len(path)} waypoints in pixel space")
-    #     print("   (Transformation to 3D Habitat coordinates will be done by agent_navigation.py)")
-        
-    #     return path, []  # Return empty list for habitat_coords (deprecated)
-
-
-# def main():
-#     """Main function to run the RRT pathfinding."""
-#     # File paths
-#     map_path = "map.png"
-#     excel_path = "../color_coding_semantic_segmentation_classes.xlsx"
-    
-#     # Initialize pathfinder
-#     pathfinder = RRTPathfinder(map_path, excel_path)
-    
-#     # Get target category from user
-#     print("Available target categories:")
-#     for category in pathfinder.target_categories.keys():
-#         print(f"  - {category}")
-    
-#     target_category = input("\nEnter target category: ").strip().lower()
-    
-#     if target_category not in pathfinder.target_categories:
-#         print(f"Invalid category! Choose from: {list(pathfinder.target_categories.keys())}")
-#         return
-    
-#     # Run pathfinding
-#     try:
-#         pixel_path, habitat_coords = pathfinder.run_pathfinding(target_category)
-        
-#         if habitat_coords:
-#             print(f"\nPathfinding successful! Found path to {target_category}.")
-#         else:
-#             print(f"\nPathfinding failed. Could not find path to {target_category}.")
-            
-#     except Exception as e:
-#         print(f"Error during pathfinding: {e}")
-
-
-# if __name__ == "__main__":
-#     main()

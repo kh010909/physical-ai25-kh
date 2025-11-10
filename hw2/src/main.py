@@ -320,62 +320,6 @@ def run_automatic_navigation(target_category: str, data_root: str, interactive_s
         return False
 
 
-# def generate_video_from_saved_frames(data_root: str, target_category: str):
-#     """
-#     Generate video from saved RGB frames.
-    
-#     Args:
-#         data_root: Directory containing saved frames
-#         target_category: Target object category for video naming
-#     """
-#     try:
-#         rgb_dir = os.path.join(data_root, "rgb")
-#         if not os.path.exists(rgb_dir):
-#             print(" No RGB frames found")
-#             return
-        
-#         # Get list of frame files
-#         frame_files = sorted([f for f in os.listdir(rgb_dir) if f.endswith('.png')])
-        
-#         if not frame_files:
-#             print(" No frame files found")
-#             return
-        
-#         # Read first frame to get dimensions
-#         first_frame_path = os.path.join(rgb_dir, frame_files[0])
-#         first_frame = cv2.imread(first_frame_path)
-        
-#         if first_frame is None:
-#             print(" Could not read first frame")
-#             return
-        
-#         height, width, layers = first_frame.shape
-        
-#         # Set up video writer
-#         video_name = f"{target_category}_navigation.mp4"
-#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#         video_writer = cv2.VideoWriter(video_name, fourcc, 10, (width, height))
-        
-#         print(f"📹 Writing {len(frame_files)} frames to {video_name}...")
-        
-#         # Write frames to video
-#         for i, frame_file in enumerate(frame_files):
-#             frame_path = os.path.join(rgb_dir, frame_file)
-#             frame = cv2.imread(frame_path)
-            
-#             if frame is not None:
-#                 video_writer.write(frame)
-                
-#                 if (i + 1) % 10 == 0:
-#                     print(f"   Written {i + 1}/{len(frame_files)} frames...")
-        
-#         video_writer.release()
-#         print(f" Video saved successfully: {video_name}")
-        
-#     except Exception as e:
-#         print(f" Error generating video: {e}")
-
-
 def main():
     """
     Main function with enhanced argument parsing for navigation modes.

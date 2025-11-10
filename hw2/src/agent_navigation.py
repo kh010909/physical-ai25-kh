@@ -33,45 +33,24 @@ class AgentNavigator:
         self.target_color = rrt_pathfinder.target_categories.get(target_category, (255, 0, 0))
         
         # Agent configuration
-        self.step_size = 0.25  # meters
+        self.step_size = 0.40  # meters
         self.turn_angle = 10.0  # degrees
         # Set agent height based on floor
-        # IMPORTANT: Y=0.0 is at floor 2 level in this environment!
         # Floor 1: Y = -1.5 (below floor 2)
         # Floor 2: Y = 0.0 (reference level)
         # Note: agent_height is the Y position of the agent base, not the sensor
         self.agent_height = -1.5 if floor == 1 else 0.0  # meters
         self.floor = floor
         self.angle_threshold = np.deg2rad(10.0)  # radians - threshold for alignment
-        # Use forward_amount * 0.8 as threshold like the working code
-        self.distance_threshold = self.step_size * 0.8  # meters - threshold for reaching waypoint
+        self.distance_threshold = self.step_size * 0.9  # meters - threshold for reaching waypoint
         
         # Video recording
         self.frames = []
-        self.video_fps = 10
+        self.video_fps = 5 
         
         # Navigation state
         self.current_waypoint_index = 0
         self.path_3d = []
-        
-    # def configure_agent_actions(self, config):
-    #     """
-    #     Configure agent actions with appropriate step sizes.
-        
-    #     Args:
-    #         config: Habitat configuration object
-    #     """
-    #     # Configure Habitat actions as per AGENTS.md specification
-    #     # Note: Habitat uses radians for turn angles
-    #     config.TASK.ACTIONS.MOVE_FORWARD.MOTION_ARGS["step_size"] = self.step_size
-    #     config.TASK.ACTIONS.TURN_LEFT.MOTION_ARGS["angle"] = np.deg2rad(self.turn_angle)
-    #     config.TASK.ACTIONS.TURN_RIGHT.MOTION_ARGS["angle"] = np.deg2rad(self.turn_angle)
-        
-    #     print(f"Agent configuration:")
-    #     print(f"  • Floor: {self.floor}")
-    #     print(f"  • Agent height: {self.agent_height} meters")
-    #     print(f"  • Step size: {self.step_size} meters")
-    #     print(f"  • Turn angle: {self.turn_angle} degrees ({np.deg2rad(self.turn_angle):.3f} radians)")
         
     def pixel_to_world(self, pixel_coord: Tuple[int, int], depth_map: np.ndarray = None, 
                        camera_matrix: np.ndarray = None, camera_transform: np.ndarray = None) -> Tuple[float, float, float]:
@@ -92,8 +71,6 @@ class AgentNavigator:
         """
         x_pixel, y_pixel = pixel_coord
         
-        # Use the VERIFIED transformation function from map_utils.py
-        # This is the EXACT same function used in test_interactive_transformation.py
         habitat_x, habitat_z = pixel_to_habitat_coords(x_pixel, y_pixel)
         
         # Set Y coordinate to agent height
@@ -158,7 +135,7 @@ class AgentNavigator:
             # Convert node to pixel coordinates
             pixel_coord = (int(node.x), int(node.y))
             
-            # Transform to 3D world coordinates using VERIFIED transformation
+            # Transform to 3D world coordinates
             world_coord = self.pixel_to_world(pixel_coord)
             waypoints_3d.append(world_coord)
             
@@ -216,22 +193,6 @@ class AgentNavigator:
             
         return angle_diff, target_yaw
         
-    # def calculate_distance_to_waypoint(self, current_pos: Tuple[float, float, float], 
-    #                                  target_pos: Tuple[float, float, float]) -> float:
-    #     """
-    #     Calculate 2D distance to target waypoint (ignoring Y axis).
-        
-    #     Args:
-    #         current_pos: Current agent position (x, y, z)
-    #         target_pos: Target waypoint (x, y, z)
-            
-    #     Returns:
-    #         Distance in meters
-    #     """
-    #     dx = target_pos[0] - current_pos[0]
-    #     dz = target_pos[2] - current_pos[2]
-    #     return math.sqrt(dx*dx + dz*dz)
-        
     def highlight_target_object(self, rgb_image: np.ndarray, semantic_map: np.ndarray, 
                                semantic_scene: habitat_sim.scene.SemanticScene = None) -> np.ndarray:
         """
@@ -262,7 +223,7 @@ class AgentNavigator:
         
         # Debug: Print semantic map info
         unique_ids = np.unique(semantic_map)
-        print(f"  [DEBUG] Semantic map contains IDs: {unique_ids[:10]}{'...' if len(unique_ids) > 10 else ''}")
+        print(f"  Semantic map contains IDs: {unique_ids[:10]}{'...' if len(unique_ids) > 10 else ''}")
         
         # Find target object pixels in semantic map using actual semantic IDs
         target_mask = self._create_target_mask_from_semantics(semantic_map, semantic_scene)
@@ -271,7 +232,7 @@ class AgentNavigator:
             num_target_pixels = np.sum(target_mask)
             total_pixels = target_mask.size
             percentage = (num_target_pixels / total_pixels) * 100
-            print(f"  [HIGHLIGHT] Found {num_target_pixels} target pixels ({percentage:.2f}% of image)")
+            print(f"  Found {num_target_pixels} target pixels ({percentage:.2f}% of image)")
             
             # Create colored overlay (semi-transparent red)
             overlay_color = np.array([255, 0, 0], dtype=np.uint8)  # Red
@@ -391,7 +352,7 @@ class AgentNavigator:
         print(f"Navigating to waypoint: ({target_waypoint[0]:.3f}, {target_waypoint[2]:.3f})")
         
         # Navigation loop with Habitat simulator
-        max_steps = 5000  # Prevent infinite loops (increased from 500)
+        max_steps = 500  # Prevent infinite loops (increased from 500)
         step_count = 0
         
         # Convert turn angle to radians for threshold comparison  
@@ -427,6 +388,17 @@ class AgentNavigator:
                 print(f"  [INFO] Reached waypoint in {step_count} steps (distance: {distance:.2f}m)")
                 print(f"  Final position: ({current_pos[0]:.3f}, {current_pos[2]:.3f})")
                 waypoint_reached = True
+                
+                # Capture final frame at waypoint
+                observations = simulator.get_sensor_observations()
+                semantic_scene = simulator.semantic_scene
+                highlighted_frame = self.highlight_target_object(
+                    observations["color_sensor"], 
+                    observations["semantic_sensor"],
+                    semantic_scene
+                )
+                frames.append(highlighted_frame)
+                
                 # Wait for a moment at the waypoint
                 cv2.waitKey(2000)
                 break
@@ -455,8 +427,8 @@ class AgentNavigator:
             # Increment step counter
             step_count += 1
             
-            # Only render and collect frames every N steps for performance
-            render_interval = 30  # Collect every 30th frame
+            # Collect frames more frequently for smooth video
+            render_interval = 5  # Collect every 5th frame instead of 30
             if step_count % render_interval == 0:
                 # Get observations only when rendering
                 observations = simulator.get_sensor_observations()
@@ -519,29 +491,6 @@ class AgentNavigator:
         
         return yaw
         
-    def _create_dummy_observations(self) -> dict:
-        """
-        Create dummy observations for simulation when Habitat is not available.
-        
-        Returns:
-            Dictionary with dummy sensor observations
-        """
-        # Create dummy RGB image
-        rgb_image = np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
-        
-        # Create dummy semantic map
-        semantic_map = np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
-        
-        # Add some target-colored pixels for demonstration
-        target_pixels = np.random.choice([True, False], size=(512, 512), p=[0.05, 0.95])
-        semantic_map[target_pixels] = self.target_color
-        
-        return {
-            "color_sensor": rgb_image,
-            "semantic_sensor": semantic_map,
-            "depth_sensor": np.ones((512, 512), dtype=np.float32)
-        }
-        
     def run_navigation(self, pixel_path: List, simulator: habitat_sim.Simulator = None, 
                       agent: habitat_sim.Agent = None) -> str:
         """
@@ -561,10 +510,6 @@ class AgentNavigator:
         print(" Transforming RRT path to 3D waypoints...")
         self.path_3d = self.transform_rrt_path_to_3d(pixel_path)
         print(f"   Generated {len(self.path_3d)} waypoints")
-        
-        # if simulator is None or agent is None:
-        #     print(" No Habitat simulator provided - using simulation mode")
-        #     return self._run_navigation_simulation(pixel_path)
         
         print(" Beginning navigation with Habitat...")
         
@@ -597,91 +542,19 @@ class AgentNavigator:
             waypoint_frames = self.navigate_to_waypoint(simulator, agent, waypoint)
             all_frames.extend(waypoint_frames)
             
+            print(f"  Collected {len(waypoint_frames)} frames for waypoint {i+1}")
+            
         # Step 3: Generate video
-        print(f"\n🎬 Generating video with {len(all_frames)} frames...")
+        print(f"\n Generating video with {len(all_frames)} frames...")
+        
+        if len(all_frames) < 10:
+            print("  Warning: Very few frames collected. Video may be very short.")
+            print("   Consider reducing render_interval or increasing navigation steps.")
+        
         video_path = self.generate_video(all_frames)
         
         print(f"✅ Navigation completed! Video saved as: {video_path}")
         return video_path
-    
-    # def _run_navigation_simulation(self, pixel_path: List) -> str:
-    #     """
-    #     Run navigation in simulation mode when Habitat is not available.
-        
-    #     Args:
-    #         pixel_path: RRT path as list of nodes
-            
-    #     Returns:
-    #         Path to generated video file
-    #     """
-    #     print("🔄 Running in simulation mode...")
-        
-    #     # Navigate through waypoints in simulation
-    #     all_frames = []
-    #     for i, waypoint in enumerate(self.path_3d):
-    #         print(f"\n--- Waypoint {i+1}/{len(self.path_3d)} ---")
-            
-    #         # Simulate navigation to waypoint
-    #         waypoint_frames = self._simulate_waypoint_navigation(waypoint, i)
-    #         all_frames.extend(waypoint_frames)
-            
-    #     # Generate video
-    #     print(f"\n🎬 Generating video with {len(all_frames)} frames...")
-    #     video_path = self.generate_video(all_frames)
-        
-    #     print(f"✅ Simulation completed! Video saved as: {video_path}")
-    #     return video_path
-        
-    # def _simulate_waypoint_navigation(self, waypoint: Tuple[float, float, float], waypoint_index: int) -> List[np.ndarray]:
-    #     """
-    #     Simulate navigation to a waypoint when Habitat is not available.
-        
-    #     Args:
-    #         waypoint: Target waypoint coordinates
-    #         waypoint_index: Index of current waypoint
-            
-    #     Returns:
-    #         List of simulated frames
-    #     """
-    #     print(f"  Simulating navigation to waypoint ({waypoint[0]:.3f}, {waypoint[2]:.3f})")
-        
-    #     frames = []
-    #     num_frames = 5 + waypoint_index  # Varying number of frames per waypoint
-        
-    #     for frame_idx in range(num_frames):
-    #         # Create dummy observations
-    #         observations = self._create_dummy_observations()
-            
-    #         # Highlight target object
-    #         highlighted_frame = self.highlight_target_object(
-    #             observations["color_sensor"],
-    #             observations["semantic_sensor"]
-    #         )
-            
-    #         # Add waypoint info to frame (for visualization)
-    #         self._add_waypoint_info_to_frame(highlighted_frame, waypoint_index, frame_idx)
-            
-    #         frames.append(highlighted_frame)
-            
-    #     print(f"  Generated {len(frames)} frames for waypoint {waypoint_index + 1}")
-    #     return frames
-        
-    # def _add_waypoint_info_to_frame(self, frame: np.ndarray, waypoint_idx: int, frame_idx: int):
-    #     """
-    #     Add waypoint information text overlay to frame.
-        
-    #     Args:
-    #         frame: RGB frame to modify
-    #         waypoint_idx: Current waypoint index
-    #         frame_idx: Current frame index within waypoint
-    #     """
-    #     # Add text overlay
-    #     text = f"Waypoint {waypoint_idx + 1} | Frame {frame_idx + 1}"
-    #     cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-    #     # Add target category info
-    #     target_text = f"Target: {self.target_category.upper()}"
-    #     cv2.putText(frame, target_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
     def generate_video(self, frames: List[np.ndarray]) -> str:
         """
@@ -695,102 +568,67 @@ class AgentNavigator:
         """
         if not frames:
             raise ValueError("No frames to generate video")
-            
+        
+        # Validate all frames have the same shape
+        first_shape = frames[0].shape
+        for i, frame in enumerate(frames):
+            if frame.shape != first_shape:
+                print(f"Warning: Frame {i} has different shape {frame.shape} vs {first_shape}")
+                # Resize to match first frame
+                frames[i] = cv2.resize(frame, (first_shape[1], first_shape[0]))
+        
         # Video configuration
         height, width, layers = frames[0].shape
-        video_name = f"{self.target_category}.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_name = f"{self.target_category}_navigation.mp4"
         
-        # Initialize video writer
-        video_writer = cv2.VideoWriter(video_name, fourcc, self.video_fps, (width, height))
+        # Try different codecs if mp4v fails
+        codecs_to_try = ['mp4v', 'avc1', 'XVID', 'MJPG']
+        video_writer = None
         
-        print(f" Writing {len(frames)} frames to {video_name}...")
+        for codec in codecs_to_try:
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                video_writer = cv2.VideoWriter(video_name, fourcc, self.video_fps, (width, height))
+                if video_writer.isOpened():
+                    print(f"Using codec: {codec}")
+                    break
+                else:
+                    video_writer.release()
+                    video_writer = None
+            except Exception as e:
+                print(f"Codec {codec} failed: {e}")
+                continue
+        
+        if video_writer is None or not video_writer.isOpened():
+            raise RuntimeError("Failed to initialize video writer with any codec")
+        
+        print(f"Writing {len(frames)} frames to {video_name} ({width}x{height} @ {self.video_fps}fps)...")
         
         # Write frames to video
+        frames_written = 0
         for i, frame in enumerate(frames):
-            # Convert RGB (from Habitat/simulation) to BGR (for OpenCV)
-            bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            video_writer.write(bgr_frame)
-            
-            if (i + 1) % 10 == 0:
-                print(f"   Written {i + 1}/{len(frames)} frames...")
+            try:
+                # Ensure frame is RGB and convert to BGR for OpenCV
+                if frame.shape[-1] == 3:  # RGB
+                    bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                else:  # Already BGR or other format
+                    bgr_frame = frame
                 
+                video_writer.write(bgr_frame)
+                frames_written += 1
+                
+                if (i + 1) % 20 == 0:
+                    print(f"   Written {i + 1}/{len(frames)} frames...")
+                    
+            except Exception as e:
+                print(f"Error writing frame {i}: {e}")
+                continue
+        
         # Finalize video
         video_writer.release()
         
-        print(f" Video saved successfully: {video_name}")
+        if frames_written == 0:
+            raise RuntimeError("No frames were successfully written to video")
+        
+        print(f"Video saved successfully: {video_name} ({frames_written} frames)")
         return video_name
-
-
-# def main():
-#     """
-#     Main function to demonstrate the agent navigation system.
-#     """
-#     print("🤖 Agent Navigation Demo")
-#     print("=" * 50)
-    
-#     # Note: Check for required files
-#     required_files = [
-#         'map.png',
-#         '../color_coding_semantic_segmentation_classes.xlsx',
-#         'coordinate_transformation.txt'
-#     ]
-    
-#     missing_files = [f for f in required_files if not os.path.exists(f)]
-#     if missing_files:
-#         print(f"❌ Missing required files: {missing_files}")
-#         print("💡 Please ensure RRT pathfinding has been run first")
-#         return
-    
-#     try:
-#         # Initialize RRT pathfinder
-#         print("🔧 Initializing RRT pathfinder...")
-#         pathfinder = RRTPathfinder(
-#             'map.png',
-#             '../color_coding_semantic_segmentation_classes.xlsx',
-#             'coordinate_transformation.txt'
-#         )
-        
-#         # Select target category
-#         target_category = 'sofa'  # Can be changed to any available category
-#         print(f"🎯 Target category: {target_category.upper()}")
-        
-#         # Get pre-computed path from RRT
-#         print("🗺️ Getting RRT path...")
-        
-#         # For demo, use a predefined start point
-#         start_point = (300, 500)
-#         goal_point = pathfinder.find_goal_point(target_category)
-        
-#         if not goal_point:
-#             print(f"❌ No {target_category} found in the map")
-#             return
-            
-#         print(f"📍 Start: {start_point}, Goal: {goal_point}")
-        
-#         # Run RRT pathfinding
-#         pixel_path = pathfinder.run_rrt(start_point, goal_point)
-        
-#         if not pixel_path:
-#             print("❌ No path found by RRT algorithm")
-#             return
-            
-#         print(f"✅ RRT path found with {len(pixel_path)} waypoints")
-        
-#         # Initialize agent navigator
-#         navigator = AgentNavigator(pathfinder, target_category)
-        
-#         # Run navigation simulation
-#         video_path = navigator.run_navigation(pixel_path)
-        
-#         print(f"\n🎉 Demo completed successfully!")
-#         print(f"📽️ Video output: {video_path}")
-        
-#     except Exception as e:
-#         print(f"❌ Error during navigation demo: {e}")
-#         import traceback
-#         traceback.print_exc()
-
-
-# if __name__ == "__main__":
-#     main()

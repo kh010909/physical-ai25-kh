@@ -20,7 +20,7 @@ def main():
     print(f"  Mean Y: {y_coords.mean():.3f}")
     print(f"  Median Y: {y_coords[len(y_coords)//2]:.3f}")
     
-    # Manual height adjustment - EDIT THESE VALUES AS NEEDED
+    # Manual height adjustmen
     # Set to None to use automatic percentile-based filtering
     
     HEIGHT_MIN = -1.2  # Absolute minimum Y coordinate to keep
@@ -39,23 +39,8 @@ def main():
     # print("\nUsing automatic height range (10th to 90th percentile)...")
     # filtered_points, filtered_colors = generator.filter_ceiling_floor_height()
     
-    # Option 3: Conservative filtering (uncomment to use)
-    # print("\nUsing conservative height range...")
-    # filtered_points, filtered_colors = generator.filter_ceiling_floor_height(
-    #     height_min=-0.8, 
-    #     height_max=0.8
-    # )
-    
     # Generate and save the map
-
     generator.generate_2d_map(filtered_points, filtered_colors)
-
-    # # generator.save_transformation(transformation)
-    # if not success:
-    #     print("Error: Map generation failed.")
-    #     return
-    # else:
-    #     print("=== 2D Semantic Map Generation Complete ===")
 
 
 if __name__ == "__main__":
